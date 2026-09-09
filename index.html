@@ -134,11 +134,36 @@
     </div>
   </div>
 
+  <!-- TEACHER LOGIN -->
+  <div id="screen-teacher-login" class="screen">
+    <span class="back-link" onclick="go('landing')">&larr; Back</span>
+    <div class="panel">
+      <h2>Teacher sign-in</h2>
+      <p class="muted">Sign in with your teacher account to build exams and view results.</p>
+      <div class="field">
+        <label for="teacherEmail">Email</label>
+        <input type="email" id="teacherEmail" placeholder="you@school.edu" autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="teacherPassword">Password</label>
+        <input type="password" id="teacherPassword" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter') teacherSignIn();">
+      </div>
+      <div id="teacherLoginError" class="banner rust" style="display:none;"></div>
+      <div class="btn-row">
+        <button id="teacherLoginBtn" onclick="teacherSignIn()">Sign in</button>
+      </div>
+      <p class="muted" style="font-size:.82rem;">Don't have a teacher account yet? Create one for yourself in the Firebase console under Authentication → Users.</p>
+    </div>
+  </div>
+
   <!-- TEACHER HOME -->
   <div id="screen-teacher-home" class="screen">
     <span class="back-link" onclick="go('landing')">&larr; Back</span>
     <div class="panel">
-      <h2>Your exams</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="margin:0;">Your exams</h2>
+        <span class="back-link" onclick="teacherSignOut()">Log out</span>
+      </div>
       <div id="teacherQuizList"></div>
       <div class="btn-row">
         <button onclick="startNewQuiz()">+ New exam</button>
@@ -305,6 +330,7 @@ ESSAY: Explain the water cycle.</div>
 <!-- Firebase (compat SDK — simplest for a plain script, no build step needed) -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 
 <script>
 /* ====================================================================
@@ -323,11 +349,13 @@ const firebaseConfig = {
 /* ==================================================================== */
 
 let db = null;
+let auth = null;
 let firebaseReady = false;
 try{
   if(firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('PASTE_')!==0 && window.firebase){
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    auth = firebase.auth();
     firebaseReady = true;
   }
 }catch(e){ console.error('Firebase init failed', e); }
@@ -413,10 +441,45 @@ function uid(len){
 }
 
 /* ---------------- router ---------------- */
+const TEACHER_ONLY_SCREENS = ['teacher-home','teacher-build','teacher-share','teacher-report','teacher-detail'];
+let pendingTeacherDestination = null;
+
 function go(name){
+  if(TEACHER_ONLY_SCREENS.indexOf(name)!==-1 && !(auth && auth.currentUser)){
+    // Not signed in as the teacher — send to the login gate instead,
+    // and remember where they were headed so login can continue there.
+    pendingTeacherDestination = name;
+    name = 'teacher-login';
+  }
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
   if(name==='teacher-home') loadTeacherHome();
+}
+
+function teacherSignIn(){
+  if(!auth){ document.getElementById('teacherLoginError').textContent = 'Firebase auth is not configured yet.'; document.getElementById('teacherLoginError').style.display='block'; return; }
+  const email = document.getElementById('teacherEmail').value.trim();
+  const password = document.getElementById('teacherPassword').value;
+  const errEl = document.getElementById('teacherLoginError');
+  errEl.style.display = 'none';
+  if(!email || !password){ errEl.textContent = 'Enter your teacher email and password.'; errEl.style.display='block'; return; }
+  const btn = document.getElementById('teacherLoginBtn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  auth.signInWithEmailAndPassword(email, password).then(()=>{
+    btn.disabled = false; btn.textContent = 'Sign in';
+    document.getElementById('teacherPassword').value = '';
+    go(pendingTeacherDestination || 'teacher-home');
+    pendingTeacherDestination = null;
+  }).catch(e=>{
+    btn.disabled = false; btn.textContent = 'Sign in';
+    errEl.textContent = (e && e.code === 'auth/invalid-credential') ? 'Incorrect email or password.' : ('Sign-in failed: ' + (e && e.message ? e.message : e));
+    errEl.style.display = 'block';
+  });
+}
+
+function teacherSignOut(){
+  if(auth) auth.signOut();
+  go('landing');
 }
 
 /* ==================================================
