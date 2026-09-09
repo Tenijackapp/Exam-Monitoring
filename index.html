@@ -209,12 +209,20 @@ A) Paris *
 B) London
 C) Berlin
 
+TF: The mitochondria is the powerhouse of the cell.
+= True
+
 ID: What powers a cell?
 = mitochondria
 = mitochondrion
 
+ENUM: Name the parts of a cell.
+= Nucleus
+= Mitochondria
+= Ribosome
+
 ESSAY: Explain the water cycle.</div>
-      <p class="muted" style="font-size:.82rem;">Mark the correct MC option with a trailing <code>*</code>. List each accepted identification answer on its own line starting with <code>=</code>. Separate questions with a blank line.</p>
+      <p class="muted" style="font-size:.82rem;">Mark the correct MC option with a trailing <code>*</code>. For true/false, put <code>= True</code> or <code>= False</code> on its own line. List each accepted identification answer on its own line starting with <code>=</code>. For enumeration, list each expected item on its own line starting with <code>=</code> — add a parenthetical or a " / " to give an item an accepted synonym, e.g. <code>= Arithmetic Logic Unit (ALU)</code>. Separate questions with a blank line.</p>
       <div class="field">
         <textarea id="importText" placeholder="Paste your questions here, or drag a .txt file onto this box..." style="min-height:140px;"></textarea>
       </div>
@@ -229,7 +237,9 @@ ESSAY: Explain the water cycle.</div>
       <div id="questionList"></div>
       <div class="btn-row">
         <button class="secondary" onclick="addQuestion('mc')">+ Multiple choice</button>
+        <button class="secondary" onclick="addQuestion('tf')">+ True / False</button>
         <button class="secondary" onclick="addQuestion('identification')">+ Identification</button>
+        <button class="secondary" onclick="addQuestion('enumeration')">+ Enumeration</button>
         <button class="secondary" onclick="addQuestion('essay')">+ Essay</button>
         <button class="secondary" onclick="addQuestion('solving')">+ Problem solving (photo)</button>
       </div>
@@ -631,9 +641,10 @@ async function deleteQuiz(quizId){
 
 function addQuestion(type){
   const q = { qid: uid(8), type: type, prompt:'', mediaUrl:'', points:1,
-    options: type==='mc'?[{text:'',imageUrl:''},{text:'',imageUrl:''}]:[],
-    correctIndex:0,
-    acceptedAnswers: type==='identification'?['']:undefined
+    options: type==='mc' ? [{text:'',imageUrl:''},{text:'',imageUrl:''}] : (type==='tf' ? [{text:'True',imageUrl:''},{text:'False',imageUrl:''}] : []),
+    correctIndex: (type==='mc'||type==='tf') ? 0 : undefined,
+    acceptedAnswers: type==='identification'?['']:undefined,
+    items: type==='enumeration' ? [{answers:['']}] : undefined
   };
   currentBuild.questions.push(q);
   renderQuestionList();
@@ -657,6 +668,24 @@ function removeAcceptedAnswer(qid, idx){
 function removeQuestion(qid){
   currentBuild.questions = currentBuild.questions.filter(q=>q.qid!==qid);
   renderQuestionList();
+}
+
+/* ---------------- enumeration items (builder) ---------------- */
+function addEnumItem(qid){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  if(!q.items) q.items = [];
+  q.items.push({answers:['']});
+  renderQuestionList();
+}
+function removeEnumItem(qid, idx){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  if(q.items.length>1) q.items.splice(idx,1);
+  renderQuestionList();
+}
+function updateEnumItem(qid, idx, value){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  const parts = value.split('/').map(s=>s.trim()).filter(Boolean);
+  q.items[idx].answers = parts.length ? parts : [''];
 }
 
 /* ---------------- roster ---------------- */
@@ -742,6 +771,12 @@ function renderQuestionList(){
             ${opt.imageUrl ? `<img src="${escapeAttr(opt.imageUrl)}" style="max-width:120px;border-radius:3px;border:1px solid var(--rule);margin-top:.35rem;">` : ''}
           </div>
         </div>`).join('') + `<button class="ghost" style="margin-top:.3rem;" onclick="addOption('${q.qid}')">+ Add option</button>`;
+    } else if(q.type==='tf'){
+      body = ['True','False'].map((label,idx)=>`
+        <div class="opt-row">
+          <input type="radio" name="correct-${q.qid}" ${q.correctIndex===idx?'checked':''} onchange="setCorrect('${q.qid}',${idx})">
+          <label style="margin:0;font-weight:400;">${label}</label>
+        </div>`).join('');
     } else if(q.type==='identification'){
       body = `<label>Accepted answer(s) — student's typed answer is checked against these (not case-sensitive)</label>` +
         q.acceptedAnswers.map((ans,idx)=>`
@@ -749,14 +784,23 @@ function renderQuestionList(){
           <input type="text" value="${escapeAttr(ans)}" placeholder="Accepted answer ${idx+1}" oninput="updateAcceptedAnswer('${q.qid}',${idx},this.value)">
           <button class="ghost" style="padding:.25rem .6rem;font-size:.78rem;" onclick="removeAcceptedAnswer('${q.qid}',${idx})">Remove</button>
         </div>`).join('') + `<button class="ghost" style="margin-top:.3rem;" onclick="addAcceptedAnswer('${q.qid}')">+ Add alternate answer</button>`;
+    } else if(q.type==='enumeration'){
+      body = `<label>Items — one row per expected answer. Add accepted synonyms on the same row separated by " / " (e.g. "Arithmetic Logic Unit / ALU").</label>` +
+        (q.items||[]).map((it,idx)=>`
+        <div class="opt-row">
+          <input type="text" value="${escapeAttr((it.answers||['']).join(' / '))}" placeholder="Item ${idx+1} answer" oninput="updateEnumItem('${q.qid}',${idx},this.value)">
+          <button class="ghost" style="padding:.25rem .6rem;font-size:.78rem;" onclick="removeEnumItem('${q.qid}',${idx})">Remove</button>
+        </div>`).join('') + `<button class="ghost" style="margin-top:.3rem;" onclick="addEnumItem('${q.qid}')">+ Add item</button>`;
     } else if(q.type==='solving'){
       body = `<p class="muted" style="font-size:.85rem;">Problem solving — student can type their work and/or attach a photo of their handwritten solution. You'll grade this manually in the report.</p>`;
     } else {
       body = `<p class="muted" style="font-size:.85rem;">Essay question — student types a free response. You'll grade this manually in the report.</p>`;
     }
-    const typeLabel = {mc:'Multiple choice', identification:'Identification', essay:'Essay', solving:'Problem solving'}[q.type];
+    const typeLabel = {mc:'Multiple choice', tf:'True / False', identification:'Identification', enumeration:'Enumeration', essay:'Essay', solving:'Problem solving'}[q.type];
     const needsKey = (q.type==='mc' && (q.correctIndex===null || q.correctIndex===undefined)) ||
-                     (q.type==='identification' && (!q.acceptedAnswers || !q.acceptedAnswers.some(a=>a && a.trim())));
+                     (q.type==='tf' && (q.correctIndex===null || q.correctIndex===undefined)) ||
+                     (q.type==='identification' && (!q.acceptedAnswers || !q.acceptedAnswers.some(a=>a && a.trim()))) ||
+                     (q.type==='enumeration' && (!q.items || !q.items.length || !q.items.some(it=>it.answers && it.answers.some(a=>a && a.trim()))));
     return `<div class="q-item">
       <div class="q-head">
         <span class="q-number">Question ${i+1} · <span class="q-badge">${typeLabel}</span>${needsKey?' <span class="pill rust" style="margin-left:.35rem;">needs answer key</span>':''}</span>
@@ -797,7 +841,13 @@ async function saveQuiz(){
     if(!q.prompt.trim()){ alert('Question '+(i+1)+' needs a prompt.'); return; }
     if(q.type==='mc' && q.options.filter(o=>o.text.trim() || o.imageUrl.trim()).length<2){ alert('Question '+(i+1)+' (multiple choice) needs at least 2 options (text or image).'); return; }
     if(q.type==='mc' && (q.correctIndex===null || q.correctIndex===undefined || !q.options[q.correctIndex])){ alert('Question '+(i+1)+' (multiple choice) needs a correct answer marked before you can save — imported questions don\'t come with an answer key.'); return; }
+    if(q.type==='tf' && (q.correctIndex===null || q.correctIndex===undefined || !q.options[q.correctIndex])){ alert('Question '+(i+1)+' (true/false) needs the correct answer marked before you can save.'); return; }
     if(q.type==='identification' && (!q.acceptedAnswers || q.acceptedAnswers.filter(a=>a.trim()).length<1)){ alert('Question '+(i+1)+' (identification) needs at least 1 accepted answer — check it and fill one in.'); return; }
+    if(q.type==='enumeration'){
+      if(!q.items || !q.items.length){ alert('Question '+(i+1)+' (enumeration) needs at least one item.'); return; }
+      const emptyIdx = q.items.findIndex(it=>!it.answers || !it.answers.some(a=>a && a.trim()));
+      if(emptyIdx!==-1){ alert('Question '+(i+1)+' (enumeration), item '+(emptyIdx+1)+' needs an answer filled in.'); return; }
+    }
   }
   currentBuild.title = title;
   currentBuild.durationMinutes = duration;
@@ -830,16 +880,18 @@ function parseImportText(raw){
     mc: /multiple\s*choice/i,
     identification: /identification/i,
     solving: /problem\s*solving/i,
-    essay: /\bessay\b/i
+    essay: /\bessay\b/i,
+    tf: /true\s*(\/|or)\s*false/i,
+    enumeration: /enumeration/i
   };
-  const explicitTagRe = /^(MC|ID|ESSAY|SOLVING)\s*:\s*(.*)$/i;
+  const explicitTagRe = /^(MC|ID|ESSAY|SOLVING|TF|ENUM)\s*:\s*(.*)$/i;
   const numberedStartRe = /^\d+[\.\)]\s+(.*)$/;
 
   function isHeaderLine(l){
     if(/^part\s+[ivxlc0-9]+\b/i.test(l)) return true;
     if(numberedStartRe.test(l)) return false;
     if(l.length >= 90) return false;
-    return sectionRe.mc.test(l) || sectionRe.identification.test(l) || sectionRe.solving.test(l) || sectionRe.essay.test(l);
+    return sectionRe.mc.test(l) || sectionRe.identification.test(l) || sectionRe.solving.test(l) || sectionRe.essay.test(l) || sectionRe.tf.test(l) || sectionRe.enumeration.test(l);
   }
 
   let sectionType = null;
@@ -856,7 +908,7 @@ function parseImportText(raw){
     if(tagM){
       pushChunk();
       const t = tagM[1].toUpperCase();
-      const explicitType = t==='MC'?'mc':t==='ID'?'identification':t==='SOLVING'?'solving':'essay';
+      const explicitType = t==='MC'?'mc':t==='ID'?'identification':t==='SOLVING'?'solving':t==='TF'?'tf':t==='ENUM'?'enumeration':'essay';
       cur = {explicitType, sectionTypeAtCreation:null, promptLine:tagM[2], body:[]};
       return;
     }
@@ -866,6 +918,8 @@ function parseImportText(raw){
       if(sectionRe.mc.test(line)) sectionType='mc';
       else if(sectionRe.identification.test(line)) sectionType='identification';
       else if(sectionRe.solving.test(line)) sectionType='solving';
+      else if(sectionRe.tf.test(line)) sectionType='tf';
+      else if(sectionRe.enumeration.test(line)) sectionType='enumeration';
       else if(sectionRe.essay.test(line)) sectionType='essay';
       return;
     }
@@ -897,6 +951,26 @@ function parseImportText(raw){
     const m = text.match(pointsRe);
     if(!m) return {text:text.trim(), points:1};
     return {text:text.slice(0,m.index).trim(), points:Math.max(1,Math.round(parseFloat(m[1])))};
+  }
+
+  // "Arithmetic Logic Unit (ALU)" -> answers ["Arithmetic Logic Unit","ALU"].
+  // A " / " inside the line also splits off extra accepted synonyms.
+  function parseEnumLine(text){
+    let answers = [];
+    const m = text.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+    if(m){
+      const primary = m[1].trim();
+      const paren = m[2].trim();
+      if(primary) answers.push(primary);
+      if(paren) answers.push(paren);
+    } else if(text.trim()){
+      answers.push(text.trim());
+    }
+    const expanded = [];
+    answers.forEach(a=>{
+      a.split('/').map(s=>s.trim()).filter(Boolean).forEach(s=>expanded.push(s));
+    });
+    return { answers: expanded.length ? expanded : [''] };
   }
 
   const questions = [];
@@ -946,6 +1020,28 @@ function parseImportText(raw){
         accepted = parts.slice(1).map(s=>s.trim()).filter(Boolean);
       }
       questions.push({qid:uid(8), type:'identification', prompt:finalPrompt, mediaUrl:'', points, options:[], correctIndex:0, acceptedAnswers: accepted.length?accepted:[''], needsAnswerKey: accepted.length===0});
+    } else if(type==='tf'){
+      let correctIndex = null;
+      const ansLine = ch.body.map(l=>l.match(acceptedAnswerLineRe)).filter(Boolean).map(m=>m[1].trim())[0];
+      if(ansLine){
+        if(/^true$/i.test(ansLine)) correctIndex = 0;
+        else if(/^false$/i.test(ansLine)) correctIndex = 1;
+      }
+      if(correctIndex===null){
+        ch.body.forEach(l=>{
+          const om = l.match(optionRe);
+          if(om && /\*\s*$/.test(om[2])){
+            const t = om[2].replace(/\*\s*$/,'').trim();
+            if(/^true$/i.test(t)) correctIndex = 0;
+            else if(/^false$/i.test(t)) correctIndex = 1;
+          }
+        });
+      }
+      questions.push({qid:uid(8), type:'tf', prompt:promptText, mediaUrl:'', points, options:[{text:'True',imageUrl:''},{text:'False',imageUrl:''}], correctIndex, needsAnswerKey: correctIndex===null});
+    } else if(type==='enumeration'){
+      const itemLines = ch.body.map(l=>l.match(acceptedAnswerLineRe)).filter(Boolean).map(m=>m[1].trim()).filter(Boolean);
+      const items = itemLines.map(parseEnumLine);
+      questions.push({qid:uid(8), type:'enumeration', prompt:promptText, mediaUrl:'', points, items, needsAnswerKey: items.length===0});
     } else if(type==='solving'){
       questions.push({qid:uid(8), type:'solving', prompt:promptText, mediaUrl:'', points});
     } else {
@@ -1080,6 +1176,16 @@ function optLabel(opt){
         <p class="muted">Correct answer: ${escapeHtml(optLabel(correctOpt))}</p>
         ${correctOpt.imageUrl ? `<img src="${escapeAttr(correctOpt.imageUrl)}" style="max-width:120px;border-radius:3px;border:1px solid var(--rule);">` : ''}
       </div>`;
+    } else if(q.type==='tf'){
+      const correct = a===q.correctIndex;
+      const chosen = (a!==undefined && a!==null) ? q.options[a] : null;
+      const correctOpt = q.options[q.correctIndex];
+      return `<div class="q-item">
+        <div class="q-number">Question ${i+1} · <span class="pill ${correct?'sage':'rust'}">${correct?'Correct':'Incorrect'}</span></div>
+        <p><strong>${escapeHtml(q.prompt)}</strong></p>
+        <p class="muted">Answered: ${chosen ? escapeHtml(chosen.text) : 'No answer'}</p>
+        <p class="muted">Correct answer: ${escapeHtml(correctOpt ? correctOpt.text : '—')}</p>
+      </div>`;
     } else if(q.type==='identification'){
       const given = (a||'').toString().trim().toLowerCase();
       const correct = (q.acceptedAnswers||[]).some(acc=>acc.trim().toLowerCase()===given && given!=='');
@@ -1088,6 +1194,20 @@ function optLabel(opt){
         <p><strong>${escapeHtml(q.prompt)}</strong></p>
         <p class="muted">Answered: ${a ? escapeHtml(a) : 'No answer'}</p>
         <p class="muted">Accepted answer(s): ${escapeHtml((q.acceptedAnswers||[]).join(', '))}</p>
+      </div>`;
+    } else if(q.type==='enumeration'){
+      const answerArr = Array.isArray(a) ? a : [];
+      const g = gradeEnumeration(q, answerArr);
+      const itemsHtml = (q.items||[]).map((it,idx)=>{
+        const got = g.claimed[idx];
+        return `<div style="font-size:.85rem;margin:.15rem 0;"><span class="pill ${got?'sage':'rust'}">${got?'found':'missed'}</span> ${escapeHtml((it.answers||[])[0]||'')}</div>`;
+      }).join('');
+      return `<div class="q-item">
+        <div class="q-number">Question ${i+1} · <span class="pill ${g.matched===g.total?'sage':(g.matched>0?'amber':'rust')}">${g.matched}/${g.total} matched</span></div>
+        <p><strong>${escapeHtml(q.prompt)}</strong></p>
+        <p class="muted">Student's answers: ${answerArr.filter(Boolean).map(x=>escapeHtml(x)).join(', ') || 'No answer'}</p>
+        <p class="muted">Expected items:</p>
+        ${itemsHtml}
       </div>`;
     } else if(q.type==='solving'){
       const obj = a && typeof a==='object' ? a : {};
@@ -1144,11 +1264,13 @@ async function saveEssayGrades(subId){
       const val = Math.max(0, Math.min(1, parseInt(document.getElementById('essayScore-'+q.qid).value,10) || 0));
       s.essayScores[q.qid] = val;
       manualTotal += val;
-    } else if(q.type==='mc'){
+    } else if(q.type==='mc' || q.type==='tf'){
       if(s.answers[q.qid]===q.correctIndex) autoTotal += 1;
     } else if(q.type==='identification'){
       const given = (s.answers[q.qid]||'').toString().trim().toLowerCase();
       if((q.acceptedAnswers||[]).some(acc=>acc.trim().toLowerCase()===given && given!=='')) autoTotal += 1;
+    } else if(q.type==='enumeration'){
+      autoTotal += gradeEnumeration(q, s.answers[q.qid]).fraction;
     }
   });
   s.essayGraded = true;
@@ -1179,6 +1301,32 @@ function shuffleArray(arr){
     [a[i],a[j]] = [a[j],a[i]];
   }
   return a;
+}
+
+// Order-independent enumeration grading: each of the student's typed blanks
+// is matched against whichever expected items haven't been claimed yet, so
+// typing the same correct answer twice (or in a different order than the
+// teacher listed) never earns double credit and never blocks a later,
+// different correct answer from matching.
+function gradeEnumeration(q, answerArr){
+  const items = (q && q.items) || [];
+  if(!items.length) return {matched:0, total:0, fraction:0, claimed:[]};
+  const claimed = new Array(items.length).fill(false);
+  let matched = 0;
+  (answerArr||[]).forEach(raw=>{
+    const val = (raw||'').toString().trim().toLowerCase();
+    if(!val) return;
+    for(let i=0;i<items.length;i++){
+      if(claimed[i]) continue;
+      const answers = items[i].answers || [];
+      if(answers.some(a=>(a||'').toString().trim().toLowerCase()===val)){
+        claimed[i] = true;
+        matched++;
+        break;
+      }
+    }
+  });
+  return {matched, total: items.length, fraction: matched/items.length, claimed};
 }
 
 async function findQuiz(){
@@ -1422,8 +1570,20 @@ function renderExamQuestions(){
           </span>
         </label>`;
       }).join('');
+    } else if(q.type==='tf'){
+      inputHtml = q.options.map((opt,idx)=>`
+        <label class="radio-opt">
+          <input type="radio" name="q-${q.qid}" onchange="recordAnswer('${q.qid}', ${idx})">
+          <span>${escapeHtml(opt.text)}</span>
+        </label>`).join('');
     } else if(q.type==='identification'){
       inputHtml = `<input type="text" oninput="recordAnswer('${q.qid}', this.value)" placeholder="Type your answer...">`;
+    } else if(q.type==='enumeration'){
+      const n = (q.items||[]).length;
+      inputHtml = Array.from({length:n}).map((_,idx)=>`
+        <div class="field" style="margin-bottom:.5rem;">
+          <input type="text" oninput="recordEnumAnswer('${q.qid}', ${idx}, this.value)" placeholder="Answer ${idx+1}">
+        </div>`).join('');
     } else if(q.type==='solving'){
       inputHtml = `
         <textarea style="min-height:100px;" oninput="recordSolvingText('${q.qid}', this.value)" placeholder="Show your work (optional if you're attaching a file)..."></textarea>
@@ -1446,6 +1606,12 @@ function renderExamQuestions(){
 
 function recordAnswer(qid, value){
   studentSub.answers[qid] = value;
+}
+
+function recordEnumAnswer(qid, idx, value){
+  const arr = Array.isArray(studentSub.answers[qid]) ? studentSub.answers[qid] : [];
+  arr[idx] = value;
+  studentSub.answers[qid] = arr;
 }
 
 function recordSolvingText(qid, value){
@@ -1520,11 +1686,14 @@ async function submitExam(){
 
   let score = 0;
   studentQuiz.questions.forEach(q=>{
-    if(q.type==='mc' && studentSub.answers[q.qid]===q.correctIndex) score += 1;
+    if((q.type==='mc'||q.type==='tf') && studentSub.answers[q.qid]===q.correctIndex) score += 1;
     if(q.type==='identification'){
       const given = (studentSub.answers[q.qid]||'').toString().trim().toLowerCase();
       const match = (q.acceptedAnswers||[]).some(a=>a.trim().toLowerCase()===given && given!=='');
       if(match) score += 1;
+    }
+    if(q.type==='enumeration'){
+      score += gradeEnumeration(q, studentSub.answers[q.qid]).fraction;
     }
   });
   studentSub.score = score;
@@ -1549,7 +1718,7 @@ async function submitExam(){
     return;
   }
 
-  const maxScore = studentQuiz.questions.filter(q=>q.type==='mc'||q.type==='identification').length;
+  const maxScore = studentQuiz.questions.filter(q=>q.type==='mc'||q.type==='identification'||q.type==='tf'||q.type==='enumeration').length;
   const hasManual = studentQuiz.questions.some(q=>q.type==='essay'||q.type==='solving');
   document.getElementById('doneSummary').textContent = hasManual
     ? `Auto-graded score: ${score}/${maxScore}. Essay/problem-solving answers will be graded by your teacher.`
