@@ -304,11 +304,10 @@ ESSAY: Explain the water cycle.</div>
       <div class="banner amber">
         This exam is monitored. Switching tabs or minimizing this window is logged with a timestamp. Your camera will take periodic snapshots (not continuous video) to check for phone use, and one snapshot is taken any time you switch away. A visible camera indicator stays on the whole time.
       </div>
-      <p class="muted">You'll need to allow camera access to continue. Time limit: <strong id="consentDuration"></strong> minutes.</p>
+      <p class="muted">Camera access is required to take this exam — there's no way to continue without it. Time limit: <strong id="consentDuration"></strong> minutes.</p>
       <div id="camPermStatus" class="muted" style="margin-bottom:1rem;"></div>
       <div class="btn-row">
         <button onclick="requestCameraAndStart()">Allow camera &amp; begin</button>
-        <button class="ghost" onclick="continueWithoutCamera()">Continue without camera (flagged)</button>
       </div>
     </div>
   </div>
@@ -1135,13 +1134,8 @@ async function requestCameraAndStart(){
     statusEl.textContent = 'Camera connected.';
     beginExam(true);
   }catch(e){
-    statusEl.textContent = 'Camera access was blocked. You can retry, or continue without it (this will be flagged on your report).';
+    statusEl.textContent = 'Camera access was blocked or is unavailable. This exam requires it — check your browser\'s site settings to allow camera access for this page, then click "Allow camera & begin" again.';
   }
-}
-
-function continueWithoutCamera(){
-  studentSub.violations.push({ type:'camera unavailable', time: Date.now(), snapshot: null });
-  beginExam(false);
 }
 
 function captureSnapshot(){
@@ -1160,10 +1154,9 @@ function beginExam(camOn){
   document.getElementById('examTitleLabel').textContent = studentQuiz.title;
   document.getElementById('camDot').classList.toggle('live', !!camOn);
   document.getElementById('camLabel').textContent = camOn ? 'Camera active' : 'Camera off';
-  document.getElementById('camPreview').style.display = camOn ? 'block' : 'none';
-  if(camOn){
-    setInterval(()=>{ const d = captureSnapshot(); if(d) document.getElementById('camPreview').src = d; }, 3000);
-  }
+  // No live preview is shown to the student — captured snapshots go straight
+  // to the teacher's report (via periodicSnapInterval and violation logging
+  // below) without ever being displayed on the student's own screen.
 
   renderExamQuestions();
   go('student-exam');
