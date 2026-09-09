@@ -538,6 +538,12 @@ function formatWindow(q){
   if(q.closesAt) parts.push('Closes ' + new Date(q.closesAt).toLocaleString());
   return `<span class="muted" style="font-size:.8rem;">${parts.join('<br>')}</span>`;
 }
+function formatWindowCompact(q){
+  if(!q.opensAt && !q.closesAt) return 'Anytime';
+  const fmt = ms => new Date(ms).toLocaleString([], {month:'numeric', day:'numeric', hour:'numeric', minute:'2-digit'});
+  if(q.opensAt && q.closesAt) return fmt(q.opensAt) + ' – ' + fmt(q.closesAt);
+  return q.opensAt ? ('Opens ' + fmt(q.opensAt)) : ('Closes ' + fmt(q.closesAt));
+}
 
 async function loadTeacherHome(){
   const keys = await sList('quiz:', true);
@@ -548,19 +554,19 @@ async function loadTeacherHome(){
     const q = await sGet(k, true);
     if(!q) continue;
     rows += `<tr>
-      <td><strong>${escapeHtml(q.title)}</strong></td>
-      <td class="muted">${q.questions.length} question${q.questions.length===1?'':'s'}</td>
-      <td class="muted">${q.durationMinutes} min</td>
-      <td>${formatWindow(q)}</td>
-      <td class="join-code" style="font-size:1rem;">${q.id}</td>
-      <td>
-        <button class="ghost" style="padding:.25rem .6rem;font-size:.78rem;" onclick="openReport('${q.id}')">Report</button>
-        <button class="ghost" style="padding:.25rem .6rem;font-size:.78rem;" onclick="editQuiz('${q.id}')">Edit</button>
-        <button class="danger" style="padding:.25rem .6rem;font-size:.78rem;" onclick="deleteQuiz('${q.id}')">Delete</button>
+      <td style="vertical-align:top;">
+        <strong>${escapeHtml(q.title)}</strong>
+        <div class="muted" style="font-size:.8rem;margin-top:.2rem;">${q.questions.length} question${q.questions.length===1?'':'s'} &middot; ${q.durationMinutes} min &middot; ${escapeHtml(formatWindowCompact(q))}</div>
+      </td>
+      <td class="join-code" style="font-size:1rem;white-space:nowrap;vertical-align:top;">${q.id}</td>
+      <td style="white-space:nowrap;vertical-align:top;">
+        <button class="ghost" style="padding:.25rem .55rem;font-size:.76rem;" onclick="openReport('${q.id}')">Report</button>
+        <button class="ghost" style="padding:.25rem .55rem;font-size:.76rem;" onclick="editQuiz('${q.id}')">Edit</button>
+        <button class="danger" style="padding:.25rem .55rem;font-size:.76rem;" onclick="deleteQuiz('${q.id}')">Delete</button>
       </td>
     </tr>`;
   }
-  wrap.innerHTML = `<table><thead><tr><th>Title</th><th>Questions</th><th>Duration</th><th>Window</th><th>Code</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+  wrap.innerHTML = `<table><thead><tr><th>Exam</th><th>Code</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 let currentBuild = null;
