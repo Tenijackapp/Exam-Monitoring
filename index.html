@@ -1110,7 +1110,7 @@ async function loadReport(){
   for(const k of keys){
     const s = await sGet(k, true);
     if(!s) continue;
-    const maxScore = quiz.questions.reduce((sum,q)=>sum+(q.points||1),0);
+    const maxScore = quiz.questions.reduce((sum,q)=>sum+(q.type==='enumeration' ? (q.items||[]).length : (q.points||1)),0);
     const violList = s.violations || [];
     const pendingEssays = quiz.questions.some(q=>q.type==='essay'||q.type==='solving') && !s.essayGraded;
     let monitoringHtml = '<span class="pill sage">clean</span>';
@@ -1270,7 +1270,7 @@ async function saveEssayGrades(subId){
       const given = (s.answers[q.qid]||'').toString().trim().toLowerCase();
       if((q.acceptedAnswers||[]).some(acc=>acc.trim().toLowerCase()===given && given!=='')) autoTotal += 1;
     } else if(q.type==='enumeration'){
-      autoTotal += gradeEnumeration(q, s.answers[q.qid]).fraction;
+      autoTotal += gradeEnumeration(q, s.answers[q.qid]).matched;
     }
   });
   s.essayGraded = true;
@@ -1693,7 +1693,7 @@ async function submitExam(){
       if(match) score += 1;
     }
     if(q.type==='enumeration'){
-      score += gradeEnumeration(q, studentSub.answers[q.qid]).fraction;
+      score += gradeEnumeration(q, studentSub.answers[q.qid]).matched;
     }
   });
   studentSub.score = score;
@@ -1718,7 +1718,11 @@ async function submitExam(){
     return;
   }
 
-  const maxScore = studentQuiz.questions.filter(q=>q.type==='mc'||q.type==='identification'||q.type==='tf'||q.type==='enumeration').length;
+  const maxScore = studentQuiz.questions.reduce((sum,q)=>{
+    if(q.type==='mc'||q.type==='tf'||q.type==='identification') return sum+1;
+    if(q.type==='enumeration') return sum+((q.items||[]).length);
+    return sum;
+  },0);
   const hasManual = studentQuiz.questions.some(q=>q.type==='essay'||q.type==='solving');
   document.getElementById('doneSummary').textContent = hasManual
     ? `Auto-graded score: ${score}/${maxScore}. Essay/problem-solving answers will be graded by your teacher.`
