@@ -287,6 +287,8 @@ ESSAY: Explain the water cycle.</div>
       <p class="muted">Code: <strong id="reportCode"></strong> &nbsp;·&nbsp; <span id="reportCount"></span></p>
       <p class="muted" id="reportWindow" style="font-size:.85rem;"></p>
       <button class="ghost" onclick="loadReport()">Refresh</button>
+      <button class="ghost" id="recalcScoresBtn" onclick="recalculateScores()">Recalculate scores</button>
+      <p class="muted" style="font-size:.8rem;margin-top:.5rem;">If you've edited this exam's questions, points, or correct answers after students already submitted, use "Recalculate scores" to re-grade everyone against the current version. Manually entered essay/problem-solving points are kept as-is.</p>
     </div>
     <div class="panel" id="reportTableWrap"></div>
   </div>
@@ -1258,21 +1260,15 @@ async function saveEssayGrades(subId){
   const s = await sGet('sub:'+currentReportQuizId+':'+subId, true);
   const quiz = await sGet('quiz:'+currentReportQuizId, true);
   s.essayScores = s.essayScores || {};
-  let manualTotal = 0, autoTotal = 0;
+  let manualTotal = 0;
   quiz.questions.forEach(q=>{
     if(q.type==='essay' || q.type==='solving'){
       const val = Math.max(0, Math.min(1, parseInt(document.getElementById('essayScore-'+q.qid).value,10) || 0));
       s.essayScores[q.qid] = val;
       manualTotal += val;
-    } else if(q.type==='mc' || q.type==='tf'){
-      if(s.answers[q.qid]===q.correctIndex) autoTotal += 1;
-    } else if(q.type==='identification'){
-      const given = (s.answers[q.qid]||'').toString().trim().toLowerCase();
-      if((q.acceptedAnswers||[]).some(acc=>acc.trim().toLowerCase()===given && given!=='')) autoTotal += 1;
-    } else if(q.type==='enumeration'){
-      autoTotal += gradeEnumeration(q, s.answers[q.qid]).matched;
     }
   });
+  const autoTotal = computeAutoScore(quiz, s.answers);
   s.essayGraded = true;
   s.score = autoTotal + manualTotal;
   const saved = await sSetWithRetry('sub:'+currentReportQuizId+':'+subId, s, true, 3);
@@ -1281,6 +1277,45 @@ async function saveEssayGrades(subId){
     return;
   }
   alert('Saved.');
+  loadReport();
+}
+
+// Re-scores every submission for the current exam against the exam's
+// CURRENT questions/points (e.g. after editing correct answers, points, or
+// enumeration items post-submission). Existing manually-entered essay /
+// problem-solving points are kept as-is — only the auto-graded portion
+// (mc, tf, identification, enumeration) is recomputed.
+async function recalculateScores(){
+  if(!currentReportQuizId) return;
+  const quiz = await sGet('quiz:'+currentReportQuizId, true);
+  if(!quiz){ alert('Could not load this exam.'); return; }
+  const keys = await sList('sub:'+quiz.id+':', true);
+  if(!keys.length){ alert('No submissions yet for this exam.'); return; }
+  if(!confirm('Recalculate scores for all ' + keys.length + ' submission(s) using this exam\'s current questions and points? Manually entered essay/problem-solving points will be kept as-is.')) return;
+
+  const btn = document.getElementById('recalcScoresBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Recalculating…'; }
+
+  let updated = 0, failed = 0;
+  for(const k of keys){
+    const s = await sGet(k, true);
+    if(!s) continue;
+    const autoTotal = computeAutoScore(quiz, s.answers);
+    let manualTotal = 0;
+    if(s.essayScores){
+      quiz.questions.forEach(q=>{
+        if((q.type==='essay' || q.type==='solving') && s.essayScores[q.qid]!==undefined){
+          manualTotal += s.essayScores[q.qid];
+        }
+      });
+    }
+    s.score = autoTotal + manualTotal;
+    const saved = await sSetWithRetry(k, s, true, 3);
+    if(saved) updated++; else failed++;
+  }
+
+  if(btn){ btn.disabled = false; btn.textContent = 'Recalculate scores'; }
+  alert('Recalculated ' + updated + ' submission(s).' + (failed ? ' ' + failed + ' could not be saved due to a server error — try again.' : ''));
   loadReport();
 }
 
@@ -1327,6 +1362,26 @@ function gradeEnumeration(q, answerArr){
     }
   });
   return {matched, total: items.length, fraction: matched/items.length, claimed};
+}
+
+// Shared auto-grading logic — used both right after a student submits and
+// whenever a teacher recalculates scores against an edited exam. Only
+// covers the auto-gradable types (mc, tf, identification, enumeration);
+// essay/solving points are entered manually and added on separately.
+function computeAutoScore(quiz, answers){
+  let total = 0;
+  answers = answers || {};
+  (quiz.questions||[]).forEach(q=>{
+    if((q.type==='mc'||q.type==='tf') && answers[q.qid]===q.correctIndex){
+      total += 1;
+    } else if(q.type==='identification'){
+      const given = (answers[q.qid]||'').toString().trim().toLowerCase();
+      if((q.acceptedAnswers||[]).some(a=>a.trim().toLowerCase()===given && given!=='')) total += 1;
+    } else if(q.type==='enumeration'){
+      total += gradeEnumeration(q, answers[q.qid]).matched;
+    }
+  });
+  return total;
 }
 
 async function findQuiz(){
@@ -1684,18 +1739,7 @@ async function submitExam(){
   stopWatermark();
   if(camStream){ camStream.getTracks().forEach(t=>t.stop()); }
 
-  let score = 0;
-  studentQuiz.questions.forEach(q=>{
-    if((q.type==='mc'||q.type==='tf') && studentSub.answers[q.qid]===q.correctIndex) score += 1;
-    if(q.type==='identification'){
-      const given = (studentSub.answers[q.qid]||'').toString().trim().toLowerCase();
-      const match = (q.acceptedAnswers||[]).some(a=>a.trim().toLowerCase()===given && given!=='');
-      if(match) score += 1;
-    }
-    if(q.type==='enumeration'){
-      score += gradeEnumeration(q, studentSub.answers[q.qid]).matched;
-    }
-  });
+  let score = computeAutoScore(studentQuiz, studentSub.answers);
   studentSub.score = score;
   studentSub.submittedAt = Date.now();
   studentSub.essayGraded = !studentQuiz.questions.some(q=>q.type==='essay'||q.type==='solving');
