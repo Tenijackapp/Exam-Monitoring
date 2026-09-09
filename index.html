@@ -222,6 +222,21 @@ ESSAY: Explain the water cycle.</div>
       </div>
     </div>
 
+    <div class="panel">
+      <h2>Roster (optional)</h2>
+      <p class="muted">Leave this empty and anyone with the code can join. Add students here and only these student numbers will be able to join — a name and student number that don't match this list are turned away on the join screen.</p>
+      <div id="rosterList"></div>
+      <div class="row" style="margin-top:.6rem;">
+        <div class="field"><label for="rosterFirst">First name</label><input type="text" id="rosterFirst" placeholder="Juan"></div>
+        <div class="field"><label for="rosterMI">M.I.</label><input type="text" id="rosterMI" placeholder="D" maxlength="2"></div>
+        <div class="field"><label for="rosterLast">Last name</label><input type="text" id="rosterLast" placeholder="Dela Cruz"></div>
+        <div class="field"><label for="rosterNumber">Student number</label><input type="text" id="rosterNumber" placeholder="2023-00123"></div>
+      </div>
+      <div class="btn-row">
+        <button class="secondary" onclick="addRosterEntry()">+ Add student</button>
+      </div>
+    </div>
+
     <div class="btn-row">
       <button onclick="saveQuiz()">Save exam &amp; get code</button>
       <button class="ghost" onclick="go('teacher-home')">Cancel</button>
@@ -266,6 +281,10 @@ ESSAY: Explain the water cycle.</div>
       <div class="field">
         <label for="joinName">Your full name</label>
         <input type="text" id="joinName" placeholder="e.g. Maria Santos">
+      </div>
+      <div class="field">
+        <label for="joinStudentNumber">Student number</label>
+        <input type="text" id="joinStudentNumber" placeholder="Only needed if your teacher requires it">
       </div>
       <div class="field">
         <label for="joinCode">Exam code</label>
@@ -506,10 +525,11 @@ async function loadTeacherHome(){
 let currentBuild = null;
 
 function startNewQuiz(){
-  currentBuild = { id:null, title:'', durationMinutes:45, questions:[] };
+  currentBuild = { id:null, title:'', durationMinutes:45, questions:[], roster:[] };
   document.getElementById('quizTitle').value='';
   document.getElementById('quizDuration').value=45;
   renderQuestionList();
+  renderRoster();
   go('teacher-build');
 }
 
@@ -541,6 +561,44 @@ function removeAcceptedAnswer(qid, idx){
 function removeQuestion(qid){
   currentBuild.questions = currentBuild.questions.filter(q=>q.qid!==qid);
   renderQuestionList();
+}
+
+/* ---------------- roster ---------------- */
+function addRosterEntry(){
+  const first = document.getElementById('rosterFirst').value.trim();
+  const mi = document.getElementById('rosterMI').value.trim();
+  const last = document.getElementById('rosterLast').value.trim();
+  const number = document.getElementById('rosterNumber').value.trim();
+  if(!first || !last || !number){ alert('First name, last name, and student number are all required to add a student to the roster.'); return; }
+  if(!currentBuild.roster) currentBuild.roster = [];
+  const dup = currentBuild.roster.some(r=>r.studentNumber.toLowerCase()===number.toLowerCase());
+  if(dup){ alert('That student number is already on the roster.'); return; }
+  currentBuild.roster.push({ firstName:first, middleInitial:mi, lastName:last, studentNumber:number });
+  document.getElementById('rosterFirst').value='';
+  document.getElementById('rosterMI').value='';
+  document.getElementById('rosterLast').value='';
+  document.getElementById('rosterNumber').value='';
+  renderRoster();
+  document.getElementById('rosterFirst').focus();
+}
+function removeRosterEntry(idx){
+  currentBuild.roster.splice(idx,1);
+  renderRoster();
+}
+function rosterDisplayName(r){
+  return [r.firstName, r.middleInitial ? r.middleInitial.replace(/\.+$/,'')+'.' : '', r.lastName].filter(Boolean).join(' ');
+}
+function renderRoster(){
+  const wrap = document.getElementById('rosterList');
+  if(!wrap) return;
+  const roster = currentBuild.roster || [];
+  if(!roster.length){ wrap.innerHTML = '<div class="empty">No roster added — this exam\'s code will work for anyone.</div>'; return; }
+  wrap.innerHTML = `<table><thead><tr><th>Name</th><th>Student number</th><th></th></tr></thead><tbody>` +
+    roster.map((r,idx)=>`<tr>
+      <td>${escapeHtml(rosterDisplayName(r))}</td>
+      <td class="muted">${escapeHtml(r.studentNumber)}</td>
+      <td><button class="ghost" style="padding:.25rem .6rem;font-size:.78rem;" onclick="removeRosterEntry(${idx})">Remove</button></td>
+    </tr>`).join('') + `</tbody></table>`;
 }
 
 function addOption(qid){
@@ -858,7 +916,7 @@ async function loadReport(){
     const viol = (s.violations||[]).length;
     const pendingEssays = quiz.questions.some(q=>q.type==='essay'||q.type==='solving') && !s.essayGraded;
     rows += `<tr class="clickable" onclick="openDetail('${s.subId}')">
-      <td><strong>${escapeHtml(s.studentName)}</strong></td>
+      <td><strong>${escapeHtml(s.studentName)}</strong>${s.studentNumber?`<div class="muted" style="font-size:.78rem;">${escapeHtml(s.studentNumber)}</div>`:''}</td>
       <td>${s.score}/${maxScore}${pendingEssays?' <span class="pill amber">grading pending</span>':''}</td>
       <td>${viol ? `<span class="pill rust">${viol} flag${viol===1?'':'s'}</span>` : `<span class="pill sage">clean</span>`}</td>
       <td class="muted">${new Date(s.submittedAt).toLocaleTimeString()}</td>
@@ -954,7 +1012,7 @@ function optLabel(opt){
 
   wrap.innerHTML = `
     <h2>${escapeHtml(s.studentName)}</h2>
-    <p class="muted">Submitted ${new Date(s.submittedAt).toLocaleString()}</p>
+    <p class="muted">${s.studentNumber?`Student number: ${escapeHtml(s.studentNumber)} &nbsp;·&nbsp; `:''}Submitted ${new Date(s.submittedAt).toLocaleString()}</p>
     <div class="rule"></div>
     <h3>Answers</h3>
     ${answersHtml}
@@ -1017,12 +1075,27 @@ function shuffleArray(arr){
 
 async function findQuiz(){
   const name = document.getElementById('joinName').value.trim();
+  const studentNumber = document.getElementById('joinStudentNumber').value.trim();
   const code = document.getElementById('joinCode').value.trim().toUpperCase();
   const errEl = document.getElementById('joinError');
   errEl.style.display='none';
   if(!name || !code){ errEl.textContent='Enter your name and the exam code.'; errEl.style.display='block'; return; }
   const quiz = await sGet('quiz:'+code, true);
   if(!quiz){ errEl.textContent='No exam found with that code.'; errEl.style.display='block'; return; }
+
+  let finalName = name;
+  if(quiz.roster && quiz.roster.length){
+    if(!studentNumber){ errEl.textContent='This exam requires your student number — your teacher has the roster.'; errEl.style.display='block'; return; }
+    const match = quiz.roster.find(r=>r.studentNumber.trim().toLowerCase()===studentNumber.toLowerCase());
+    if(!match){ errEl.textContent="That student number isn't on the roster for this exam. Check with your teacher."; errEl.style.display='block'; return; }
+    if(match.lastName && name.toLowerCase().indexOf(match.lastName.toLowerCase())===-1){
+      errEl.textContent = 'The name you typed doesn\'t match student number '+match.studentNumber+' on the roster. Please check and try again.';
+      errEl.style.display='block';
+      return;
+    }
+    finalName = rosterDisplayName(match);
+  }
+
   studentQuiz = quiz;
   const questionOrder = shuffleArray(quiz.questions.map((q,i)=>i));
   const optionOrders = {};
@@ -1032,7 +1105,8 @@ async function findQuiz(){
   studentSub = {
     subId: uid(10),
     quizId: quiz.id,
-    studentName: name,
+    studentName: finalName,
+    studentNumber: (quiz.roster && quiz.roster.length) ? studentNumber : '',
     questionOrder: questionOrder,
     optionOrders: optionOrders,
     answers: {},
