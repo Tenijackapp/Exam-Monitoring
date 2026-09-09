@@ -164,8 +164,26 @@
     </div>
 
     <div class="panel">
-      <h2>Generate questions from text</h2>
-      <p class="muted">This self-hosted version can't safely call Claude's AI to draft questions (that requires an API key, and this page's source is public). Ask Claude in chat to draft questions for your topic, then add them below with the buttons.</p>
+      <h2>Import questions from text</h2>
+      <p class="muted">Paste (or drag in a .txt file with) questions in the format below, and it'll parse them locally — no AI call needed. Ask Claude in chat to write questions in this format for any topic, then paste them here.</p>
+      <div class="banner amber" style="font-family:monospace;white-space:pre-wrap;font-size:.82rem;">MC: What is the capital of France?
+A) Paris *
+B) London
+C) Berlin
+
+ID: What powers a cell?
+= mitochondria
+= mitochondrion
+
+ESSAY: Explain the water cycle.</div>
+      <p class="muted" style="font-size:.82rem;">Mark the correct MC option with a trailing <code>*</code>. List each accepted identification answer on its own line starting with <code>=</code>. Separate questions with a blank line.</p>
+      <div class="field">
+        <textarea id="importText" placeholder="Paste your questions here, or drag a .txt file onto this box..." style="min-height:140px;"></textarea>
+      </div>
+      <div class="btn-row">
+        <button onclick="importQuestionsFromText()">Import questions</button>
+      </div>
+      <div id="importStatus" class="muted" style="margin-top:.5rem;font-size:.85rem;"></div>
     </div>
 
     <div class="panel">
@@ -572,7 +590,80 @@ function viewReportFromShare(){
   openReport(currentBuild.id);
 }
 
-/* ---------------- AI question generation ---------------- */
+/* ---------------- text import (plain-text questions, no AI) ---------------- */
+function parseImportText(raw){
+  const blocks = raw.split(/\n\s*\n+/).map(b=>b.trim()).filter(Boolean);
+  const questions = [];
+  blocks.forEach(block=>{
+    const lines = block.split('\n').map(l=>l.trim()).filter(Boolean);
+    if(!lines.length) return;
+    const m = lines[0].match(/^(MC|ID|ESSAY)\s*:\s*(.*)$/i);
+    let type, promptText, bodyLines;
+    if(m){
+      type = m[1].toUpperCase();
+      promptText = m[2];
+      bodyLines = lines.slice(1);
+    } else {
+      // No explicit tag: infer from shape — lettered options means MC, otherwise essay.
+      type = lines.some(l=>/^[A-Za-z]\)/.test(l)) ? 'MC' : 'ESSAY';
+      promptText = lines[0];
+      bodyLines = lines.slice(1);
+    }
+    if(!promptText) return;
+    if(type==='MC'){
+      const options = [];
+      let correctIndex = 0;
+      bodyLines.forEach(l=>{
+        const om = l.match(/^[A-Za-z]\)\s*(.*)$/);
+        if(om){
+          let text = om[1];
+          const isCorrect = /\*\s*$/.test(text);
+          if(isCorrect){ text = text.replace(/\*\s*$/,'').trim(); correctIndex = options.length; }
+          options.push({text, imageUrl:''});
+        }
+      });
+      if(options.length>=2) questions.push({ qid: uid(8), type:'mc', prompt:promptText, mediaUrl:'', options, correctIndex });
+    } else if(type==='ID'){
+      const accepted = bodyLines.filter(l=>l.indexOf('=')===0).map(l=>l.slice(1).trim()).filter(Boolean);
+      questions.push({ qid: uid(8), type:'identification', prompt:promptText, mediaUrl:'', options:[], correctIndex:0, acceptedAnswers: accepted.length?accepted:[''] });
+    } else {
+      questions.push({ qid: uid(8), type:'essay', prompt:promptText, mediaUrl:'' });
+    }
+  });
+  return questions;
+}
+
+function importQuestionsFromText(){
+  const el = document.getElementById('importText');
+  const statusEl = document.getElementById('importStatus');
+  const raw = el.value.trim();
+  if(!raw){ statusEl.textContent = 'Paste some questions first.'; return; }
+  const items = parseImportText(raw);
+  if(!items.length){ statusEl.textContent = 'Could not find any questions in that text — check the format above.'; return; }
+  items.forEach(q=>currentBuild.questions.push(q));
+  renderQuestionList();
+  statusEl.textContent = `Imported ${items.length} question(s). Review and edit as needed.`;
+  el.value = '';
+}
+
+(function setupImportDragDrop(){
+  const el = document.getElementById('importText');
+  if(!el) return;
+  el.addEventListener('dragover', function(e){ e.preventDefault(); });
+  el.addEventListener('drop', function(e){
+    e.preventDefault();
+    const file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(file && (file.type==='text/plain' || file.name.endsWith('.txt'))){
+      const reader = new FileReader();
+      reader.onload = function(ev){ el.value = ev.target.result; };
+      reader.readAsText(file);
+    } else {
+      const text = e.dataTransfer.getData('text/plain');
+      if(text) el.value = text;
+    }
+  });
+})();
+
 /* ==================================================
    TEACHER: report
    ================================================== */
