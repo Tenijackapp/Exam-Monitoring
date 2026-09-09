@@ -727,6 +727,12 @@ function parseImportText(raw){
   const optionRe = /^([A-Za-z])[\.\)]\s*(.*)$/;
   const answerBlankRe = /^answer\s*:?\s*_+\s*$/i;
   const acceptedAnswerLineRe = /^=\s*(.*)$/;
+  // Fallbacks for when line breaks between a question and its options/answers
+  // get lost before the text reaches this box (common when pasting from a
+  // source that used soft line-wraps instead of real line breaks) — these
+  // split an "A) ... B) ..." or "question. = ans1 = ans2" run-on line apart.
+  const inlineOptionSplitRe = /\s(?=[A-Za-z][\.\)]\s)/;
+  const inlineAnswerSplitRe = /\s=\s+/;
 
   function extractPoints(text){
     const m = text.match(pointsRe);
@@ -754,10 +760,33 @@ function parseImportText(raw){
           options.push({text:t, imageUrl:''});
         }
       });
-      if(options.length>=2) questions.push({qid:uid(8), type:'mc', prompt:promptText, mediaUrl:'', points, options, correctIndex, needsAnswerKey: correctIndex===null});
+      let finalPrompt = promptText, finalPoints = points;
+      if(options.length<2){
+        const segments = ch.promptLine.split(inlineOptionSplitRe);
+        if(segments.length>=3){
+          const head = extractPoints(segments[0]);
+          finalPrompt = head.text; finalPoints = head.points;
+          options.length = 0; correctIndex = null;
+          segments.slice(1).forEach(seg=>{
+            const om = seg.match(optionRe);
+            if(om){
+              let t = om[2];
+              if(/\*\s*$/.test(t)){ t=t.replace(/\*\s*$/,'').trim(); correctIndex=options.length; }
+              options.push({text:t, imageUrl:''});
+            }
+          });
+        }
+      }
+      if(options.length>=2) questions.push({qid:uid(8), type:'mc', prompt:finalPrompt, mediaUrl:'', points:finalPoints, options, correctIndex, needsAnswerKey: correctIndex===null});
     } else if(type==='identification'){
-      const accepted = ch.body.map(l=>l.match(acceptedAnswerLineRe)).filter(Boolean).map(m=>m[1].trim()).filter(Boolean);
-      questions.push({qid:uid(8), type:'identification', prompt:promptText, mediaUrl:'', points, options:[], correctIndex:0, acceptedAnswers: accepted.length?accepted:[''], needsAnswerKey: accepted.length===0});
+      let accepted = ch.body.map(l=>l.match(acceptedAnswerLineRe)).filter(Boolean).map(m=>m[1].trim()).filter(Boolean);
+      let finalPrompt = promptText;
+      if(accepted.length===0 && inlineAnswerSplitRe.test(promptText)){
+        const parts = promptText.split(inlineAnswerSplitRe);
+        finalPrompt = parts[0].trim();
+        accepted = parts.slice(1).map(s=>s.trim()).filter(Boolean);
+      }
+      questions.push({qid:uid(8), type:'identification', prompt:finalPrompt, mediaUrl:'', points, options:[], correctIndex:0, acceptedAnswers: accepted.length?accepted:[''], needsAnswerKey: accepted.length===0});
     } else if(type==='solving'){
       questions.push({qid:uid(8), type:'solving', prompt:promptText, mediaUrl:'', points});
     } else {
