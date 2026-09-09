@@ -913,12 +913,18 @@ async function loadReport(){
     const s = await sGet(k, true);
     if(!s) continue;
     const maxScore = quiz.questions.reduce((sum,q)=>sum+(q.points||1),0);
-    const viol = (s.violations||[]).length;
+    const violList = s.violations || [];
     const pendingEssays = quiz.questions.some(q=>q.type==='essay'||q.type==='solving') && !s.essayGraded;
+    let monitoringHtml = '<span class="pill sage">clean</span>';
+    if(violList.length){
+      const counts = {};
+      violList.forEach(v=>{ counts[v.type] = (counts[v.type]||0)+1; });
+      monitoringHtml = Object.keys(counts).map(t=>`<span class="pill rust" style="margin:1px 2px 1px 0;display:inline-block;">${escapeHtml(t)} &times;${counts[t]}</span>`).join('');
+    }
     rows += `<tr class="clickable" onclick="openDetail('${s.subId}')">
       <td><strong>${escapeHtml(s.studentName)}</strong>${s.studentNumber?`<div class="muted" style="font-size:.78rem;">${escapeHtml(s.studentNumber)}</div>`:''}</td>
       <td>${s.score}/${maxScore}${pendingEssays?' <span class="pill amber">grading pending</span>':''}</td>
-      <td>${viol ? `<span class="pill rust">${viol} flag${viol===1?'':'s'}</span>` : `<span class="pill sage">clean</span>`}</td>
+      <td>${monitoringHtml}</td>
       <td class="muted">${new Date(s.submittedAt).toLocaleTimeString()}</td>
     </tr>`;
   }
@@ -1220,22 +1226,34 @@ function onPageHide(){
   persistProgress();
 }
 
-let lastViolationLogAt = 0;
+// Switching away from the exam usually fires BOTH a visibilitychange (tab
+// goes hidden) and a window blur (window loses input focus) for the same
+// physical action — logging whichever arrived first made the label a coin
+// flip between "tab switched" and "window unfocused" for the same event.
+// Instead we wait a beat to see which signals actually fired, then log ONE
+// flag with a label that reflects exactly what happened:
+//   - the tab itself went hidden (they switched tabs, or fully left)  -> "Tab switched"
+//   - only lost input focus while the tab stayed visible on screen    -> "Window unfocused"
+let violPending = null;
+function scheduleViolationCheck(signal){
+  if(!violPending) violPending = { hidden:false, blurred:false, time: Date.now() };
+  violPending[signal] = true;
+  clearTimeout(violPending.timer);
+  violPending.timer = setTimeout(flushViolationCheck, 200);
+}
+function flushViolationCheck(){
+  const p = violPending; violPending = null;
+  if(!p) return;
+  const type = p.hidden ? 'Tab switched' : 'Window unfocused';
+  const snap = captureSnapshot();
+  studentSub.violations.push({ type, time: p.time, snapshot: snap });
+  persistProgress();
+}
 function onVisibilityChange(){
-  if(document.hidden){
-    logViolation('tab switched');
-  }
+  if(document.hidden) scheduleViolationCheck('hidden');
 }
 function onWindowBlur(){
-  logViolation('window unfocused');
-}
-function logViolation(type){
-  const now = Date.now();
-  if(now - lastViolationLogAt < 800) return; // blur + visibilitychange fire together on the same switch — only log it once
-  lastViolationLogAt = now;
-  const snap = captureSnapshot();
-  studentSub.violations.push({ type, time: now, snapshot: snap });
-  persistProgress();
+  scheduleViolationCheck('blurred');
 }
 
 function updateTimer(){
