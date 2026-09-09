@@ -165,7 +165,7 @@
 
     <div class="panel">
       <h2>Import questions from text</h2>
-      <p class="muted">Paste (or drag in a .txt file with) questions in the format below, and it'll parse them locally — no AI call needed. Ask Claude in chat to write questions in this format for any topic, then paste them here.</p>
+      <p class="muted">Paste your questions in either style: the tagged format below, or straight out of a real exam document — numbered questions ("1. ..."), lettered options ("A." or "A)"), and section headings like "Part I. Multiple Choice" all get recognized. "(3 pts)" after a question sets its point value automatically.</p>
       <div class="banner amber" style="font-family:monospace;white-space:pre-wrap;font-size:.82rem;">MC: What is the capital of France?
 A) Paris *
 B) London
@@ -451,7 +451,7 @@ function startNewQuiz(){
 }
 
 function addQuestion(type){
-  const q = { qid: uid(8), type: type, prompt:'', mediaUrl:'',
+  const q = { qid: uid(8), type: type, prompt:'', mediaUrl:'', points:1,
     options: type==='mc'?[{text:'',imageUrl:''},{text:'',imageUrl:''}]:[],
     correctIndex:0,
     acceptedAnswers: type==='identification'?['']:undefined
@@ -489,6 +489,10 @@ function addOption(qid){
 function updateQField(qid, field, value){
   const q = currentBuild.questions.find(q=>q.qid===qid);
   q[field] = value;
+}
+function updateQPoints(qid, value){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  q.points = Math.max(1, parseInt(value,10) || 1);
 }
 function updateOption(qid, idx, value){
   const q = currentBuild.questions.find(q=>q.qid===qid);
@@ -534,10 +538,16 @@ function renderQuestionList(){
       body = `<p class="muted" style="font-size:.85rem;">Essay question — student types a free response. You'll grade this manually in the report.</p>`;
     }
     const typeLabel = {mc:'Multiple choice', identification:'Identification', essay:'Essay', solving:'Problem solving'}[q.type];
+    const needsKey = (q.type==='mc' && (q.correctIndex===null || q.correctIndex===undefined)) ||
+                     (q.type==='identification' && (!q.acceptedAnswers || !q.acceptedAnswers.some(a=>a && a.trim())));
     return `<div class="q-item">
       <div class="q-head">
-        <span class="q-number">Question ${i+1} · <span class="q-badge">${typeLabel}</span></span>
-        <button class="danger" style="padding:.25rem .6rem;font-size:.78rem;" onclick="removeQuestion('${q.qid}')">Remove</button>
+        <span class="q-number">Question ${i+1} · <span class="q-badge">${typeLabel}</span>${needsKey?' <span class="pill rust" style="margin-left:.35rem;">needs answer key</span>':''}</span>
+        <div style="display:flex;align-items:center;gap:.5rem;">
+          <label style="margin:0;font-size:.78rem;">Points</label>
+          <input type="number" min="1" step="1" value="${q.points||1}" style="max-width:60px;padding:.3rem;" onchange="updateQPoints('${q.qid}',this.value)">
+          <button class="danger" style="padding:.25rem .6rem;font-size:.78rem;" onclick="removeQuestion('${q.qid}')">Remove</button>
+        </div>
       </div>
       <div class="field" style="margin-top:.6rem;">
         <label>Prompt</label>
@@ -566,6 +576,7 @@ async function saveQuiz(){
     const q = currentBuild.questions[i];
     if(!q.prompt.trim()){ alert('Question '+(i+1)+' needs a prompt.'); return; }
     if(q.type==='mc' && q.options.filter(o=>o.text.trim() || o.imageUrl.trim()).length<2){ alert('Question '+(i+1)+' (multiple choice) needs at least 2 options (text or image).'); return; }
+    if(q.type==='mc' && (q.correctIndex===null || q.correctIndex===undefined || !q.options[q.correctIndex])){ alert('Question '+(i+1)+' (multiple choice) needs a correct answer marked before you can save — imported questions don\'t come with an answer key.'); return; }
     if(q.type==='identification' && (!q.acceptedAnswers || q.acceptedAnswers.filter(a=>a.trim()).length<1)){ alert('Question '+(i+1)+' (identification) needs at least 1 accepted answer — check it and fill one in.'); return; }
   }
   currentBuild.title = title;
@@ -592,42 +603,102 @@ function viewReportFromShare(){
 
 /* ---------------- text import (plain-text questions, no AI) ---------------- */
 function parseImportText(raw){
-  const blocks = raw.split(/\n\s*\n+/).map(b=>b.trim()).filter(Boolean);
-  const questions = [];
-  blocks.forEach(block=>{
-    const lines = block.split('\n').map(l=>l.trim()).filter(Boolean);
-    if(!lines.length) return;
-    const m = lines[0].match(/^(MC|ID|ESSAY)\s*:\s*(.*)$/i);
-    let type, promptText, bodyLines;
-    if(m){
-      type = m[1].toUpperCase();
-      promptText = m[2];
-      bodyLines = lines.slice(1);
-    } else {
-      // No explicit tag: infer from shape — lettered options means MC, otherwise essay.
-      type = lines.some(l=>/^[A-Za-z]\)/.test(l)) ? 'MC' : 'ESSAY';
-      promptText = lines[0];
-      bodyLines = lines.slice(1);
+  const lines = raw.split('\n').map(l=>l.trim());
+  const sectionRe = {
+    mc: /multiple\s*choice/i,
+    identification: /identification/i,
+    solving: /problem\s*solving/i,
+    essay: /\bessay\b/i
+  };
+  const explicitTagRe = /^(MC|ID|ESSAY|SOLVING)\s*:\s*(.*)$/i;
+  const numberedStartRe = /^\d+[\.\)]\s+(.*)$/;
+
+  function isHeaderLine(l){
+    if(/^part\s+[ivxlc0-9]+\b/i.test(l)) return true;
+    if(numberedStartRe.test(l)) return false;
+    if(l.length >= 90) return false;
+    return sectionRe.mc.test(l) || sectionRe.identification.test(l) || sectionRe.solving.test(l) || sectionRe.essay.test(l);
+  }
+
+  let sectionType = null;
+  let cur = null;
+  const chunks = [];
+  function pushChunk(){ if(cur && cur.promptLine.trim()) chunks.push(cur); cur=null; }
+
+  lines.forEach(line=>{
+    if(!line) return;
+
+    // An explicit per-question tag always wins, even if it also contains a
+    // section keyword (e.g. "ESSAY: ..." would otherwise look like a header).
+    const tagM = line.match(explicitTagRe);
+    if(tagM){
+      pushChunk();
+      const t = tagM[1].toUpperCase();
+      const explicitType = t==='MC'?'mc':t==='ID'?'identification':t==='SOLVING'?'solving':'essay';
+      cur = {explicitType, sectionTypeAtCreation:null, promptLine:tagM[2], body:[]};
+      return;
     }
+
+    if(isHeaderLine(line)){
+      pushChunk();
+      if(sectionRe.mc.test(line)) sectionType='mc';
+      else if(sectionRe.identification.test(line)) sectionType='identification';
+      else if(sectionRe.solving.test(line)) sectionType='solving';
+      else if(sectionRe.essay.test(line)) sectionType='essay';
+      return;
+    }
+
+    const numM = line.match(numberedStartRe);
+    if(numM){
+      pushChunk();
+      cur = {explicitType:null, sectionTypeAtCreation: sectionType, promptLine:numM[1], body:[]};
+      return;
+    }
+
+    if(!cur) return; // stray instructional text outside any question
+    cur.body.push(line);
+  });
+  pushChunk();
+
+  const pointsRe = /\(\s*(\d+(?:\.\d+)?)\s*(?:pts?|points?)\s*\)\s*$/i;
+  const optionRe = /^([A-Za-z])[\.\)]\s*(.*)$/;
+  const answerBlankRe = /^answer\s*:?\s*_+\s*$/i;
+  const acceptedAnswerLineRe = /^=\s*(.*)$/;
+
+  function extractPoints(text){
+    const m = text.match(pointsRe);
+    if(!m) return {text:text.trim(), points:1};
+    return {text:text.slice(0,m.index).trim(), points:Math.max(1,Math.round(parseFloat(m[1])))};
+  }
+
+  const questions = [];
+  chunks.forEach(ch=>{
+    const {text:promptText, points} = extractPoints(ch.promptLine);
     if(!promptText) return;
-    if(type==='MC'){
-      const options = [];
-      let correctIndex = 0;
-      bodyLines.forEach(l=>{
-        const om = l.match(/^[A-Za-z]\)\s*(.*)$/);
+    let type = ch.explicitType || ch.sectionTypeAtCreation;
+    if(!type){
+      if(ch.body.some(l=>optionRe.test(l))) type='mc';
+      else if(ch.body.some(l=>answerBlankRe.test(l) || acceptedAnswerLineRe.test(l))) type='identification';
+      else type='essay';
+    }
+    if(type==='mc'){
+      const options=[]; let correctIndex=null;
+      ch.body.forEach(l=>{
+        const om = l.match(optionRe);
         if(om){
-          let text = om[1];
-          const isCorrect = /\*\s*$/.test(text);
-          if(isCorrect){ text = text.replace(/\*\s*$/,'').trim(); correctIndex = options.length; }
-          options.push({text, imageUrl:''});
+          let t = om[2];
+          if(/\*\s*$/.test(t)){ t=t.replace(/\*\s*$/,'').trim(); correctIndex=options.length; }
+          options.push({text:t, imageUrl:''});
         }
       });
-      if(options.length>=2) questions.push({ qid: uid(8), type:'mc', prompt:promptText, mediaUrl:'', options, correctIndex });
-    } else if(type==='ID'){
-      const accepted = bodyLines.filter(l=>l.indexOf('=')===0).map(l=>l.slice(1).trim()).filter(Boolean);
-      questions.push({ qid: uid(8), type:'identification', prompt:promptText, mediaUrl:'', options:[], correctIndex:0, acceptedAnswers: accepted.length?accepted:[''] });
+      if(options.length>=2) questions.push({qid:uid(8), type:'mc', prompt:promptText, mediaUrl:'', points, options, correctIndex, needsAnswerKey: correctIndex===null});
+    } else if(type==='identification'){
+      const accepted = ch.body.map(l=>l.match(acceptedAnswerLineRe)).filter(Boolean).map(m=>m[1].trim()).filter(Boolean);
+      questions.push({qid:uid(8), type:'identification', prompt:promptText, mediaUrl:'', points, options:[], correctIndex:0, acceptedAnswers: accepted.length?accepted:[''], needsAnswerKey: accepted.length===0});
+    } else if(type==='solving'){
+      questions.push({qid:uid(8), type:'solving', prompt:promptText, mediaUrl:'', points});
     } else {
-      questions.push({ qid: uid(8), type:'essay', prompt:promptText, mediaUrl:'' });
+      questions.push({qid:uid(8), type:'essay', prompt:promptText, mediaUrl:'', points});
     }
   });
   return questions;
@@ -642,7 +713,8 @@ function importQuestionsFromText(){
   if(!items.length){ statusEl.textContent = 'Could not find any questions in that text — check the format above.'; return; }
   items.forEach(q=>currentBuild.questions.push(q));
   renderQuestionList();
-  statusEl.textContent = `Imported ${items.length} question(s). Review and edit as needed.`;
+  const needingKeys = items.filter(q=>q.needsAnswerKey).length;
+  statusEl.textContent = `Imported ${items.length} question(s).` + (needingKeys ? ` ${needingKeys} need a correct answer marked or filled in (look for "needs answer key") before you can save.` : ' Review and edit as needed.');
   el.value = '';
 }
 
@@ -690,7 +762,7 @@ async function loadReport(){
   for(const k of keys){
     const s = await sGet(k, true);
     if(!s) continue;
-    const maxScore = quiz.questions.length;
+    const maxScore = quiz.questions.reduce((sum,q)=>sum+(q.points||1),0);
     const viol = (s.violations||[]).length;
     const pendingEssays = quiz.questions.some(q=>q.type==='essay'||q.type==='solving') && !s.essayGraded;
     rows += `<tr class="clickable" onclick="openDetail('${s.subId}')">
