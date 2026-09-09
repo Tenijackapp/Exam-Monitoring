@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proctor Desk — Exam Monitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F7F5F0;
+    --panel:#FFFFFF;
+    --ink:#1B2A4A;
+    --ink-soft:#3A4A6B;
+    --text:#2B2B28;
+    --muted:#6B6A62;
+    --rule:#DAD5C8;
+    --amber:#C08A2E;
+    --rust:#B4483A;
+    --rust-bg:#F7E9E6;
+    --sage:#5F7A5B;
+    --sage-bg:#EAF0E7;
+    --radius:3px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    line-height:1.5;
+    min-height:100vh;
+  }
+  h1,h2,h3,.serif{font-family:'Lora',serif;}
+  h1{font-size:1.9rem;font-weight:600;margin:0 0 .25rem;color:var(--ink);}
+  h2{font-size:1.3rem;font-weight:600;margin:0 0 .75rem;color:var(--ink);}
+  h3{font-size:1.05rem;font-weight:600;margin:0 0 .5rem;color:var(--ink);}
+  p{margin:0 0 .75rem;}
+  .muted{color:var(--muted);}
+  .app{max-width:920px;margin:0 auto;padding:2.5rem 1.5rem 5rem;}
+  .masthead{display:flex;align-items:baseline;justify-content:space-between;border-bottom:2px solid var(--ink);padding-bottom:1rem;margin-bottom:2rem;flex-wrap:wrap;gap:.5rem;}
+  .masthead .tag{font-size:.8rem;color:var(--muted);letter-spacing:.02em;}
+  .screen{display:none;}
+  .screen.active{display:block;}
+  .panel{background:var(--panel);border:1px solid var(--rule);border-radius:var(--radius);padding:1.5rem;margin-bottom:1.25rem;}
+  .rule{border:none;border-top:1px solid var(--rule);margin:1.25rem 0;}
+  .choice-row{display:flex;gap:1rem;flex-wrap:wrap;margin-top:1.5rem;}
+  .choice-card{flex:1;min-width:240px;border:1px solid var(--rule);background:var(--panel);border-radius:var(--radius);padding:1.5rem;cursor:pointer;transition:border-color .15s ease;}
+  .choice-card:hover{border-color:var(--ink);}
+  .choice-card h3{margin-bottom:.35rem;}
+  label{display:block;font-size:.85rem;font-weight:600;color:var(--ink-soft);margin-bottom:.3rem;}
+  input[type=text],input[type=number],input[type=password],textarea,select{
+    width:100%;padding:.55rem .65rem;border:1px solid var(--rule);border-radius:var(--radius);
+    font-family:'Inter',sans-serif;font-size:.95rem;background:#FEFDFB;color:var(--text);
+  }
+  textarea{min-height:70px;resize:vertical;}
+  input:focus,textarea:focus,select:focus,button:focus-visible{outline:2px solid var(--ink);outline-offset:1px;}
+  .field{margin-bottom:1rem;}
+  .row{display:flex;gap:1rem;flex-wrap:wrap;}
+  .row > *{flex:1;min-width:160px;}
+  button{
+    font-family:'Inter',sans-serif;font-weight:600;font-size:.9rem;
+    padding:.6rem 1.1rem;border-radius:var(--radius);border:1px solid var(--ink);
+    background:var(--ink);color:#fff;cursor:pointer;
+  }
+  button.secondary{background:transparent;color:var(--ink);}
+  button.ghost{background:transparent;color:var(--ink-soft);border-color:var(--rule);}
+  button.danger{background:transparent;color:var(--rust);border-color:var(--rust);}
+  button:disabled{opacity:.5;cursor:not-allowed;}
+  button + button{margin-left:.5rem;}
+  .btn-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem;}
+  .q-item{border:1px solid var(--rule);border-radius:var(--radius);padding:1rem;margin-bottom:.75rem;background:#FEFDFB;}
+  .q-item .q-head{display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;}
+  .q-badge{display:inline-block;font-size:.72rem;font-weight:600;letter-spacing:.02em;color:var(--ink-soft);background:var(--rule);padding:.15rem .5rem;border-radius:2px;}
+  .opt-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem;}
+  .opt-row input[type=text]{flex:1;}
+  .banner{padding:.85rem 1rem;border-radius:var(--radius);font-size:.9rem;margin-bottom:1rem;}
+  .banner.amber{background:#FBF2E2;border:1px solid var(--amber);color:#7A5A1E;}
+  .banner.rust{background:var(--rust-bg);border:1px solid var(--rust);color:var(--rust);}
+  .banner.sage{background:var(--sage-bg);border:1px solid var(--sage);color:var(--sage);}
+  .timer{font-family:'Lora',serif;font-weight:600;font-size:1.4rem;color:var(--ink);}
+  .exam-header{position:sticky;top:0;background:var(--paper);z-index:5;padding:.75rem 0;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem;}
+  .cam-status{display:flex;align-items:center;gap:.4rem;font-size:.8rem;color:var(--muted);}
+  .cam-dot{width:8px;height:8px;border-radius:50%;background:var(--rust);}
+  .cam-dot.live{background:var(--sage);animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+  .q-number{font-size:.78rem;color:var(--muted);text-transform:none;letter-spacing:.02em;}
+  .media-wrap img,.media-wrap video{max-width:100%;border-radius:var(--radius);border:1px solid var(--rule);margin:.6rem 0;}
+  .radio-opt{display:flex;align-items:center;gap:.55rem;padding:.5rem;border:1px solid var(--rule);border-radius:var(--radius);margin-bottom:.4rem;cursor:pointer;}
+  .radio-opt:hover{border-color:var(--ink-soft);}
+  .radio-opt input{width:auto;}
+  table{width:100%;border-collapse:collapse;font-size:.9rem;}
+  th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--rule);}
+  th{color:var(--ink-soft);font-weight:600;font-size:.8rem;text-transform:none;}
+  tr.clickable{cursor:pointer;}
+  tr.clickable:hover{background:#FBF9F4;}
+  .violation-item{display:flex;gap:.75rem;padding:.6rem 0;border-bottom:1px solid var(--rule);align-items:flex-start;}
+  .violation-item img{width:96px;border-radius:var(--radius);border:1px solid var(--rule);}
+  .pill{display:inline-block;font-size:.72rem;font-weight:600;padding:.15rem .5rem;border-radius:2px;}
+  .pill.rust{background:var(--rust-bg);color:var(--rust);}
+  .pill.sage{background:var(--sage-bg);color:var(--sage);}
+  .pill.amber{background:#FBF2E2;color:#7A5A1E;}
+  .back-link{font-size:.85rem;color:var(--ink-soft);cursor:pointer;text-decoration:underline;margin-bottom:1rem;display:inline-block;}
+  .join-code{font-family:'Lora',serif;font-size:1.6rem;font-weight:600;letter-spacing:.08em;color:var(--ink);}
+  .empty{padding:2rem 1rem;text-align:center;color:var(--muted);border:1px dashed var(--rule);border-radius:var(--radius);}
+  .footer-note{font-size:.78rem;color:var(--muted);margin-top:2rem;}
+  #camPreview{width:160px;border-radius:var(--radius);border:1px solid var(--rule);position:fixed;bottom:1rem;right:1rem;z-index:20;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="masthead">
+    <div>
+      <h1>Proctor Desk</h1>
+      <div class="tag">Exam monitoring for the classroom</div>
+    </div>
+  </div>
+
+  <!-- LANDING -->
+  <div id="screen-landing" class="screen active">
+    <p class="muted">Choose how you're using this exam today.</p>
+    <div class="choice-row">
+      <div class="choice-card" onclick="go('teacher-home')">
+        <span class="q-badge">Teacher</span>
+        <h3>Build &amp; monitor an exam</h3>
+        <p class="muted">Create questions, set a timer, and review results and violation snapshots.</p>
+      </div>
+      <div class="choice-card" onclick="go('student-join')">
+        <span class="q-badge">Student</span>
+        <h3>Take an exam</h3>
+        <p class="muted">Enter the code your teacher gave you.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEACHER HOME -->
+  <div id="screen-teacher-home" class="screen">
+    <span class="back-link" onclick="go('landing')">&larr; Back</span>
+    <div class="panel">
+      <h2>Your exams</h2>
+      <div id="teacherQuizList"></div>
+      <div class="btn-row">
+        <button onclick="startNewQuiz()">+ New exam</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEACHER BUILDER -->
+  <div id="screen-teacher-build" class="screen">
+    <span class="back-link" onclick="go('teacher-home')">&larr; Back to exams</span>
+    <div class="panel">
+      <h2>Exam details</h2>
+      <div class="row">
+        <div class="field">
+          <label for="quizTitle">Exam title</label>
+          <input type="text" id="quizTitle" placeholder="e.g. Unit 4 — Cell Biology">
+        </div>
+        <div class="field">
+          <label for="quizDuration">Time limit (minutes)</label>
+          <input type="number" id="quizDuration" value="45" min="1">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Generate questions from text</h2>
+      <p class="muted">This self-hosted version can't safely call Claude's AI to draft questions (that requires an API key, and this page's source is public). Ask Claude in chat to draft questions for your topic, then add them below with the buttons.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Questions</h2>
+      <div id="questionList"></div>
+      <div class="btn-row">
+        <button class="secondary" onclick="addQuestion('mc')">+ Multiple choice</button>
+        <button class="secondary" onclick="addQuestion('identification')">+ Identification</button>
+        <button class="secondary" onclick="addQuestion('essay')">+ Essay</button>
+        <button class="secondary" onclick="addQuestion('solving')">+ Problem solving (photo)</button>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button onclick="saveQuiz()">Save exam &amp; get code</button>
+      <button class="ghost" onclick="go('teacher-home')">Cancel</button>
+    </div>
+  </div>
+
+  <!-- TEACHER SHARE -->
+  <div id="screen-teacher-share" class="screen">
+    <div class="panel">
+      <h2>Exam saved</h2>
+      <p class="muted">Share this code with students. They'll enter it on the "Take an exam" screen.</p>
+      <div class="join-code" id="shareCode">------</div>
+      <div class="btn-row">
+        <button onclick="go('teacher-home')">Done</button>
+        <button class="secondary" onclick="viewReportFromShare()">View live report</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEACHER REPORT -->
+  <div id="screen-teacher-report" class="screen">
+    <span class="back-link" onclick="go('teacher-home')">&larr; Back to exams</span>
+    <div class="panel">
+      <h2 id="reportTitle">Report</h2>
+      <p class="muted">Code: <strong id="reportCode"></strong> &nbsp;·&nbsp; <span id="reportCount"></span></p>
+      <button class="ghost" onclick="loadReport()">Refresh</button>
+    </div>
+    <div class="panel" id="reportTableWrap"></div>
+  </div>
+
+  <!-- TEACHER SUBMISSION DETAIL -->
+  <div id="screen-teacher-detail" class="screen">
+    <span class="back-link" onclick="go('teacher-report')">&larr; Back to report</span>
+    <div class="panel" id="detailWrap"></div>
+  </div>
+
+  <!-- STUDENT JOIN -->
+  <div id="screen-student-join" class="screen">
+    <span class="back-link" onclick="go('landing')">&larr; Back</span>
+    <div class="panel">
+      <h2>Enter exam code</h2>
+      <div class="field">
+        <label for="joinName">Your full name</label>
+        <input type="text" id="joinName" placeholder="e.g. Maria Santos">
+      </div>
+      <div class="field">
+        <label for="joinCode">Exam code</label>
+        <input type="text" id="joinCode" placeholder="e.g. AB12CD" style="text-transform:uppercase;">
+      </div>
+      <div id="joinError" class="banner rust" style="display:none;"></div>
+      <div class="btn-row">
+        <button onclick="findQuiz()">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STUDENT CONSENT -->
+  <div id="screen-student-consent" class="screen">
+    <div class="panel">
+      <h2 id="consentTitle">Before you begin</h2>
+      <div class="banner amber">
+        This exam is monitored. Switching tabs or minimizing this window is logged with a timestamp. Your camera will take periodic snapshots (not continuous video) to check for phone use, and one snapshot is taken any time you switch away. A visible camera indicator stays on the whole time.
+      </div>
+      <p class="muted">You'll need to allow camera access to continue. Time limit: <strong id="consentDuration"></strong> minutes.</p>
+      <div id="camPermStatus" class="muted" style="margin-bottom:1rem;"></div>
+      <div class="btn-row">
+        <button onclick="requestCameraAndStart()">Allow camera &amp; begin</button>
+        <button class="ghost" onclick="continueWithoutCamera()">Continue without camera (flagged)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STUDENT EXAM -->
+  <div id="screen-student-exam" class="screen" style="user-select:none;-webkit-user-select:none;">
+    <div id="examWatermark" style="display:none;position:fixed;inset:-20% -50%;pointer-events:none;z-index:2;transform:rotate(-25deg);opacity:.06;font-size:12px;line-height:2.6;color:#000;overflow:hidden;"></div>
+    <div class="exam-header">
+      <div>
+        <strong id="examTitleLabel"></strong>
+        <div class="cam-status"><span class="cam-dot" id="camDot"></span><span id="camLabel">Camera off</span></div>
+      </div>
+      <div class="timer" id="examTimer">--:--</div>
+    </div>
+    <div id="examQuestions"></div>
+    <div class="btn-row">
+      <button onclick="submitExam()">Submit exam</button>
+    </div>
+  </div>
+
+  <!-- STUDENT DONE -->
+  <div id="screen-student-done" class="screen">
+    <div class="panel">
+      <h2>Submitted</h2>
+      <p id="doneSummary"></p>
+      <button onclick="go('landing')">Done</button>
+    </div>
+  </div>
+
+  <div id="firebaseWarning" class="banner rust" style="display:none;margin-bottom:1rem;">Firebase isn't configured yet — open this file, find <code>PASTE_YOUR_API_KEY</code> near the top of the code, and replace the config block with your own Firebase project's settings. Nothing will save or sync until that's done.</div>
+  <div class="footer-note">Backed by your own Firebase project — data usage depends on your Firebase plan, not Claude.</div>
+</div>
+
+<video id="camVideo" autoplay muted playsinline style="display:none;"></video>
+<canvas id="camCanvas" style="display:none;"></canvas>
+<img id="camPreview" style="display:none;" alt="camera preview">
+
+<!-- Firebase (compat SDK — simplest for a plain script, no build step needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<script>
+/* ====================================================================
+   PASTE YOUR FIREBASE CONFIG BELOW.
+   Get this from: Firebase console → Project settings → General →
+   "Your apps" → the web app (</>) you registered → SDK config snippet.
+   ==================================================================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyBkBECJUvmnZRz1ZyQFYCt6q77-EyiZo2A",
+  authDomain: "exam-monitoring-web-app.firebaseapp.com",
+  projectId: "exam-monitoring-web-app",
+  storageBucket: "exam-monitoring-web-app.firebasestorage.app",
+  messagingSenderId: "180498115126",
+  appId: "1:180498115126:web:68efacd9215074a4c88697"
+};
+/* ==================================================================== */
+
+let db = null;
+let firebaseReady = false;
+try{
+  if(firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('PASTE_')!==0 && window.firebase){
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    firebaseReady = true;
+  }
+}catch(e){ console.error('Firebase init failed', e); }
+
+if(!firebaseReady){
+  const warn = document.getElementById('firebaseWarning');
+  if(warn) warn.style.display = 'block';
+}
+
+function requireDb(){
+  if(!firebaseReady){
+    alert('Firebase isn\'t configured yet. Open this file, find "PASTE_YOUR_API_KEY" near the top, and replace the firebaseConfig block with your own project\'s config from the Firebase console.');
+    throw new Error('Firebase not configured');
+  }
+}
+
+/* ---------------- storage helpers (Firestore-backed) ----------------
+   Same function names/signatures as the Claude-artifact version, so
+   nothing else in this file needs to change. Keys are routed to the
+   matching Firestore collection/document based on their prefix:
+     "quiz:<code>"              -> quizzes/<code>
+     "sub:<quizId>:<subId>"     -> quizzes/<quizId>/submissions/<subId>
+------------------------------------------------------------------- */
+function parseStorageKey(key){
+  if(key.indexOf('quiz:')===0) return {type:'quiz', id:key.slice(5)};
+  if(key.indexOf('sub:')===0){
+    const rest = key.slice(4);
+    const idx = rest.indexOf(':');
+    return {type:'sub', quizId:rest.slice(0,idx), subId:rest.slice(idx+1)};
+  }
+  return null;
+}
+
+async function sGet(key){
+  requireDb();
+  const k = parseStorageKey(key);
+  if(!k) return null;
+  try{
+    if(k.type==='quiz'){
+      const doc = await db.collection('quizzes').doc(k.id).get();
+      return doc.exists ? doc.data() : null;
+    }
+    const doc = await db.collection('quizzes').doc(k.quizId).collection('submissions').doc(k.subId).get();
+    return doc.exists ? doc.data() : null;
+  }catch(e){ console.error('Firestore get failed', e); return null; }
+}
+
+async function sSet(key, value){
+  requireDb();
+  const k = parseStorageKey(key);
+  if(!k) return null;
+  try{
+    if(k.type==='quiz'){
+      await db.collection('quizzes').doc(k.id).set(value);
+    } else {
+      await db.collection('quizzes').doc(k.quizId).collection('submissions').doc(k.subId).set(value);
+    }
+    return value;
+  }catch(e){ console.error('Firestore set failed', e); return null; }
+}
+
+async function sList(prefix){
+  requireDb();
+  try{
+    if(prefix==='quiz:'){
+      const snap = await db.collection('quizzes').get();
+      return snap.docs.map(d=>'quiz:'+d.id);
+    }
+    if(prefix.indexOf('sub:')===0){
+      const rest = prefix.slice(4);
+      const quizId = rest.slice(0, rest.length-1); // strip trailing ':'
+      const snap = await db.collection('quizzes').doc(quizId).collection('submissions').get();
+      return snap.docs.map(d=>'sub:'+quizId+':'+d.id);
+    }
+    return [];
+  }catch(e){ console.error('Firestore list failed', e); return []; }
+}
+
+function uid(len){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s=''; for(let i=0;i<(len||6);i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+
+/* ---------------- router ---------------- */
+function go(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  if(name==='teacher-home') loadTeacherHome();
+}
+
+/* ==================================================
+   TEACHER: exam list
+   ================================================== */
+async function loadTeacherHome(){
+  const keys = await sList('quiz:', true);
+  const wrap = document.getElementById('teacherQuizList');
+  if(!keys.length){ wrap.innerHTML = '<div class="empty">No exams yet. Create one below.</div>'; return; }
+  let rows = '';
+  for(const k of keys){
+    const q = await sGet(k, true);
+    if(!q) continue;
+    rows += `<tr class="clickable" onclick="openReport('${q.id}')">
+      <td><strong>${escapeHtml(q.title)}</strong></td>
+      <td class="muted">${q.questions.length} question${q.questions.length===1?'':'s'}</td>
+      <td class="muted">${q.durationMinutes} min</td>
+      <td class="join-code" style="font-size:1rem;">${q.id}</td>
+    </tr>`;
+  }
+  wrap.innerHTML = `<table><thead><tr><th>Title</th><th>Questions</th><th>Duration</th><th>Code</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+let currentBuild = null;
+
+function startNewQuiz(){
+  currentBuild = { id:null, title:'', durationMinutes:45, questions:[] };
+  document.getElementById('quizTitle').value='';
+  document.getElementById('quizDuration').value=45;
+  renderQuestionList();
+  go('teacher-build');
+}
+
+function addQuestion(type){
+  const q = { qid: uid(8), type: type, prompt:'', mediaUrl:'',
+    options: type==='mc'?[{text:'',imageUrl:''},{text:'',imageUrl:''}]:[],
+    correctIndex:0,
+    acceptedAnswers: type==='identification'?['']:undefined
+  };
+  currentBuild.questions.push(q);
+  renderQuestionList();
+}
+
+function addAcceptedAnswer(qid){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  q.acceptedAnswers.push('');
+  renderQuestionList();
+}
+function updateAcceptedAnswer(qid, idx, value){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  q.acceptedAnswers[idx] = value;
+}
+function removeAcceptedAnswer(qid, idx){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  if(q.acceptedAnswers.length>1) q.acceptedAnswers.splice(idx,1);
+  renderQuestionList();
+}
+
+function removeQuestion(qid){
+  currentBuild.questions = currentBuild.questions.filter(q=>q.qid!==qid);
+  renderQuestionList();
+}
+
+function addOption(qid){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  q.options.push({text:'',imageUrl:''});
+  renderQuestionList();
+}
+
+function updateQField(qid, field, value){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  q[field] = value;
+}
+function updateOption(qid, idx, value){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  q.options[idx].text = value;
+}
+function updateOptionImage(qid, idx, value){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  q.options[idx].imageUrl = value;
+}
+function setCorrect(qid, idx){
+  const q = currentBuild.questions.find(q=>q.qid===qid);
+  q.correctIndex = idx;
+}
+
+function renderQuestionList(){
+  const wrap = document.getElementById('questionList');
+  if(!currentBuild.questions.length){
+    wrap.innerHTML = '<div class="empty">No questions yet.</div>';
+    return;
+  }
+  wrap.innerHTML = currentBuild.questions.map((q,i)=>{
+    let body = '';
+    if(q.type==='mc'){
+      body = q.options.map((opt,idx)=>`
+        <div class="opt-row" style="align-items:flex-start;">
+          <input type="radio" name="correct-${q.qid}" ${q.correctIndex===idx?'checked':''} onchange="setCorrect('${q.qid}',${idx})" style="margin-top:.6rem;">
+          <div style="flex:1;">
+            <input type="text" value="${escapeAttr(opt.text)}" placeholder="Option ${idx+1} text (optional if using an image)" oninput="updateOption('${q.qid}',${idx},this.value)">
+            <input type="text" value="${escapeAttr(opt.imageUrl)}" placeholder="Option ${idx+1} image URL (optional)" style="margin-top:.35rem;" oninput="updateOptionImage('${q.qid}',${idx},this.value)">
+            ${opt.imageUrl ? `<img src="${escapeAttr(opt.imageUrl)}" style="max-width:120px;border-radius:3px;border:1px solid var(--rule);margin-top:.35rem;">` : ''}
+          </div>
+        </div>`).join('') + `<button class="ghost" style="margin-top:.3rem;" onclick="addOption('${q.qid}')">+ Add option</button>`;
+    } else if(q.type==='identification'){
+      body = `<label>Accepted answer(s) — student's typed answer is checked against these (not case-sensitive)</label>` +
+        q.acceptedAnswers.map((ans,idx)=>`
+        <div class="opt-row">
+          <input type="text" value="${escapeAttr(ans)}" placeholder="Accepted answer ${idx+1}" oninput="updateAcceptedAnswer('${q.qid}',${idx},this.value)">
+          <button class="ghost" style="padding:.25rem .6rem;font-size:.78rem;" onclick="removeAcceptedAnswer('${q.qid}',${idx})">Remove</button>
+        </div>`).join('') + `<button class="ghost" style="margin-top:.3rem;" onclick="addAcceptedAnswer('${q.qid}')">+ Add alternate answer</button>`;
+    } else if(q.type==='solving'){
+      body = `<p class="muted" style="font-size:.85rem;">Problem solving — student can type their work and/or attach a photo of their handwritten solution. You'll grade this manually in the report.</p>`;
+    } else {
+      body = `<p class="muted" style="font-size:.85rem;">Essay question — student types a free response. You'll grade this manually in the report.</p>`;
+    }
+    const typeLabel = {mc:'Multiple choice', identification:'Identification', essay:'Essay', solving:'Problem solving'}[q.type];
+    return `<div class="q-item">
+      <div class="q-head">
+        <span class="q-number">Question ${i+1} · <span class="q-badge">${typeLabel}</span></span>
+        <button class="danger" style="padding:.25rem .6rem;font-size:.78rem;" onclick="removeQuestion('${q.qid}')">Remove</button>
+      </div>
+      <div class="field" style="margin-top:.6rem;">
+        <label>Prompt</label>
+        <textarea oninput="updateQField('${q.qid}','prompt',this.value)" placeholder="Type the question...">${escapeHtml(q.prompt)}</textarea>
+      </div>
+      <div class="field">
+        <label>Image or video URL (optional)</label>
+        <input type="text" value="${escapeAttr(q.mediaUrl)}" placeholder="https://..." oninput="updateQField('${q.qid}','mediaUrl',this.value)">
+      </div>
+      ${body}
+    </div>`;
+  }).join('');
+}
+
+async function saveQuiz(){
+  if(!currentBuild){
+    alert('Something reset your exam draft (often from a page reload). Please start a new exam and re-add your questions.');
+    go('teacher-home');
+    return;
+  }
+  const title = document.getElementById('quizTitle').value.trim();
+  const duration = parseInt(document.getElementById('quizDuration').value,10) || 45;
+  if(!title){ alert('Give the exam a title first.'); return; }
+  if(!currentBuild.questions.length){ alert('Add at least one question.'); return; }
+  for(let i=0;i<currentBuild.questions.length;i++){
+    const q = currentBuild.questions[i];
+    if(!q.prompt.trim()){ alert('Question '+(i+1)+' needs a prompt.'); return; }
+    if(q.type==='mc' && q.options.filter(o=>o.text.trim() || o.imageUrl.trim()).length<2){ alert('Question '+(i+1)+' (multiple choice) needs at least 2 options (text or image).'); return; }
+    if(q.type==='identification' && (!q.acceptedAnswers || q.acceptedAnswers.filter(a=>a.trim()).length<1)){ alert('Question '+(i+1)+' (identification) needs at least 1 accepted answer — check it and fill one in.'); return; }
+  }
+  currentBuild.title = title;
+  currentBuild.durationMinutes = duration;
+  currentBuild.id = currentBuild.id || uid(6);
+  currentBuild.createdAt = Date.now();
+  try{
+    const result = await sSet('quiz:'+currentBuild.id, currentBuild, true);
+    if(!result){
+      alert('The exam could not be saved to storage. Make sure you are logged into a Claude account and try again — if this keeps happening, try reducing the number of questions.');
+      return;
+    }
+    document.getElementById('shareCode').textContent = currentBuild.id;
+    go('teacher-share');
+  }catch(e){
+    console.error(e);
+    alert('Something went wrong while saving: ' + (e && e.message ? e.message : e));
+  }
+}
+
+function viewReportFromShare(){
+  openReport(currentBuild.id);
+}
+
+/* ---------------- AI question generation ---------------- */
+/* ==================================================
+   TEACHER: report
+   ================================================== */
+let currentReportQuizId = null;
+
+async function openReport(quizId){
+  currentReportQuizId = quizId;
+  go('teacher-report');
+  await loadReport();
+}
+
+async function loadReport(){
+  const quiz = await sGet('quiz:'+currentReportQuizId, true);
+  if(!quiz){ document.getElementById('reportTableWrap').innerHTML = '<div class="empty">Exam not found.</div>'; return; }
+  document.getElementById('reportTitle').textContent = quiz.title;
+  document.getElementById('reportCode').textContent = quiz.id;
+  const keys = await sList('sub:'+quiz.id+':', true);
+  document.getElementById('reportCount').textContent = keys.length + ' submission(s)';
+  if(!keys.length){
+    document.getElementById('reportTableWrap').innerHTML = '<div class="empty">No submissions yet.</div>';
+    return;
+  }
+  let rows = '';
+  for(const k of keys){
+    const s = await sGet(k, true);
+    if(!s) continue;
+    const maxScore = quiz.questions.length;
+    const viol = (s.violations||[]).length;
+    const pendingEssays = quiz.questions.some(q=>q.type==='essay'||q.type==='solving') && !s.essayGraded;
+    rows += `<tr class="clickable" onclick="openDetail('${s.subId}')">
+      <td><strong>${escapeHtml(s.studentName)}</strong></td>
+      <td>${s.score}/${maxScore}${pendingEssays?' <span class="pill amber">grading pending</span>':''}</td>
+      <td>${viol ? `<span class="pill rust">${viol} flag${viol===1?'':'s'}</span>` : `<span class="pill sage">clean</span>`}</td>
+      <td class="muted">${new Date(s.submittedAt).toLocaleTimeString()}</td>
+    </tr>`;
+  }
+  document.getElementById('reportTableWrap').innerHTML = `<table><thead><tr><th>Student</th><th>Score</th><th>Monitoring</th><th>Submitted</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function openDetail(subId){
+  const s = await sGet('sub:'+currentReportQuizId+':'+subId, true);
+  const quiz = await sGet('quiz:'+currentReportQuizId, true);
+  go('teacher-detail');
+  const wrap = document.getElementById('detailWrap');
+
+  let violHtml = '<p class="muted">No tab-switch flags.</p>';
+  if(s.violations && s.violations.length){
+    violHtml = s.violations.map(v=>`
+      <div class="violation-item">
+        ${v.snapshot ? `<img src="${v.snapshot}">` : '<div class="muted" style="width:96px;">no image</div>'}
+        <div>
+          <span class="pill rust">${v.type}</span>
+          <div class="muted" style="font-size:.82rem;margin-top:.2rem;">${new Date(v.time).toLocaleTimeString()}</div>
+        </div>
+      </div>`).join('');
+  }
+  let periodicHtml = '<p class="muted">None recorded.</p>';
+  if(s.periodicSnapshots && s.periodicSnapshots.length){
+    periodicHtml = '<div style="display:flex;gap:.5rem;flex-wrap:wrap;">' + s.periodicSnapshots.map(p=>`
+      <div style="text-align:center;">
+        <img src="${p.snapshot}" style="width:96px;border-radius:3px;border:1px solid var(--rule);">
+        <div class="muted" style="font-size:.75rem;">${new Date(p.time).toLocaleTimeString()}</div>
+      </div>`).join('') + '</div>';
+  }
+
+function optLabel(opt){
+  if(!opt) return '—';
+  if(opt.text && opt.imageUrl) return opt.text + ' (image)';
+  if(opt.imageUrl) return '[image option]';
+  return opt.text || '—';
+}
+
+  let answersHtml = quiz.questions.map((q,i)=>{
+    const a = s.answers[q.qid];
+    if(q.type==='mc'){
+      const correct = a===q.correctIndex;
+      const chosen = (a!==undefined && a!==null) ? q.options[a] : null;
+      const correctOpt = q.options[q.correctIndex];
+      return `<div class="q-item">
+        <div class="q-number">Question ${i+1} · <span class="pill ${correct?'sage':'rust'}">${correct?'Correct':'Incorrect'}</span></div>
+        <p><strong>${escapeHtml(q.prompt)}</strong></p>
+        <p class="muted">Answered: ${chosen ? escapeHtml(optLabel(chosen)) : 'No answer'}</p>
+        ${chosen && chosen.imageUrl ? `<img src="${escapeAttr(chosen.imageUrl)}" style="max-width:120px;border-radius:3px;border:1px solid var(--rule);">` : ''}
+        <p class="muted">Correct answer: ${escapeHtml(optLabel(correctOpt))}</p>
+        ${correctOpt.imageUrl ? `<img src="${escapeAttr(correctOpt.imageUrl)}" style="max-width:120px;border-radius:3px;border:1px solid var(--rule);">` : ''}
+      </div>`;
+    } else if(q.type==='identification'){
+      const given = (a||'').toString().trim().toLowerCase();
+      const correct = (q.acceptedAnswers||[]).some(acc=>acc.trim().toLowerCase()===given && given!=='');
+      return `<div class="q-item">
+        <div class="q-number">Question ${i+1} · <span class="pill ${correct?'sage':'rust'}">${correct?'Correct':'Incorrect'}</span></div>
+        <p><strong>${escapeHtml(q.prompt)}</strong></p>
+        <p class="muted">Answered: ${a ? escapeHtml(a) : 'No answer'}</p>
+        <p class="muted">Accepted answer(s): ${escapeHtml((q.acceptedAnswers||[]).join(', '))}</p>
+      </div>`;
+    } else if(q.type==='solving'){
+      const obj = a && typeof a==='object' ? a : {};
+      let fileHtml = '';
+      if(obj.file){
+        if(obj.file.type && obj.file.type.startsWith('image/')){
+          fileHtml = `<img src="${obj.file.dataUrl}" style="max-width:280px;border-radius:3px;border:1px solid var(--rule);margin:.4rem 0;">`;
+        } else {
+          fileHtml = `<p><a href="${obj.file.dataUrl}" download="${escapeAttr(obj.file.name)}" target="_blank">📎 ${escapeHtml(obj.file.name)}</a></p>`;
+        }
+      }
+      return `<div class="q-item">
+        <div class="q-number">Question ${i+1} · <span class="q-badge">Problem solving</span></div>
+        <p><strong>${escapeHtml(q.prompt)}</strong></p>
+        ${obj.text ? `<p style="white-space:pre-wrap;">${escapeHtml(obj.text)}</p>` : ''}
+        ${fileHtml || (!obj.text ? '<p class="muted">(no answer submitted)</p>' : '')}
+        <label>Points awarded (0 or 1)</label>
+        <input type="number" min="0" max="1" step="1" style="max-width:100px;" id="essayScore-${q.qid}" value="${(s.essayScores&&s.essayScores[q.qid])||0}">
+      </div>`;
+    } else {
+      return `<div class="q-item">
+        <div class="q-number">Question ${i+1} · <span class="q-badge">Essay</span></div>
+        <p><strong>${escapeHtml(q.prompt)}</strong></p>
+        <p style="white-space:pre-wrap;">${escapeHtml(a || '(no answer)')}</p>
+        <label>Points awarded (0 or 1)</label>
+        <input type="number" min="0" max="1" step="1" style="max-width:100px;" id="essayScore-${q.qid}" value="${(s.essayScores&&s.essayScores[q.qid])||0}">
+      </div>`;
+    }
+  }).join('');
+
+  wrap.innerHTML = `
+    <h2>${escapeHtml(s.studentName)}</h2>
+    <p class="muted">Submitted ${new Date(s.submittedAt).toLocaleString()}</p>
+    <div class="rule"></div>
+    <h3>Answers</h3>
+    ${answersHtml}
+    ${quiz.questions.some(q=>q.type==='essay'||q.type==='solving') ? `<div class="btn-row"><button onclick="saveEssayGrades('${subId}')">Save manual grades</button></div>` : ''}
+    <div class="rule"></div>
+    <h3>Tab-switch / window flags</h3>
+    ${violHtml}
+    <div class="rule"></div>
+    <h3>Periodic camera snapshots (every 15 min)</h3>
+    ${periodicHtml}
+  `;
+}
+
+async function saveEssayGrades(subId){
+  const s = await sGet('sub:'+currentReportQuizId+':'+subId, true);
+  const quiz = await sGet('quiz:'+currentReportQuizId, true);
+  s.essayScores = s.essayScores || {};
+  let manualTotal = 0, autoTotal = 0;
+  quiz.questions.forEach(q=>{
+    if(q.type==='essay' || q.type==='solving'){
+      const val = Math.max(0, Math.min(1, parseInt(document.getElementById('essayScore-'+q.qid).value,10) || 0));
+      s.essayScores[q.qid] = val;
+      manualTotal += val;
+    } else if(q.type==='mc'){
+      if(s.answers[q.qid]===q.correctIndex) autoTotal += 1;
+    } else if(q.type==='identification'){
+      const given = (s.answers[q.qid]||'').toString().trim().toLowerCase();
+      if((q.acceptedAnswers||[]).some(acc=>acc.trim().toLowerCase()===given && given!=='')) autoTotal += 1;
+    }
+  });
+  s.essayGraded = true;
+  s.score = autoTotal + manualTotal;
+  const saved = await sSetWithRetry('sub:'+currentReportQuizId+':'+subId, s, true, 3);
+  if(!saved){
+    alert('Could not save grades due to a server error. Please try again.');
+    return;
+  }
+  alert('Saved.');
+  loadReport();
+}
+
+/* ==================================================
+   STUDENT flow
+   ================================================== */
+let studentQuiz = null;
+let studentSub = null;
+let camStream = null;
+let examTimerInterval = null;
+let periodicSnapInterval = null;
+let examDeadline = null;
+
+function shuffleArray(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+async function findQuiz(){
+  const name = document.getElementById('joinName').value.trim();
+  const code = document.getElementById('joinCode').value.trim().toUpperCase();
+  const errEl = document.getElementById('joinError');
+  errEl.style.display='none';
+  if(!name || !code){ errEl.textContent='Enter your name and the exam code.'; errEl.style.display='block'; return; }
+  const quiz = await sGet('quiz:'+code, true);
+  if(!quiz){ errEl.textContent='No exam found with that code.'; errEl.style.display='block'; return; }
+  studentQuiz = quiz;
+  const questionOrder = shuffleArray(quiz.questions.map((q,i)=>i));
+  const optionOrders = {};
+  quiz.questions.forEach(q=>{
+    if(q.type==='mc') optionOrders[q.qid] = shuffleArray(q.options.map((o,i)=>i));
+  });
+  studentSub = {
+    subId: uid(10),
+    quizId: quiz.id,
+    studentName: name,
+    questionOrder: questionOrder,
+    optionOrders: optionOrders,
+    answers: {},
+    violations: [],
+    periodicSnapshots: [],
+    score: 0,
+    submittedAt: null
+  };
+  document.getElementById('consentTitle').textContent = quiz.title;
+  document.getElementById('consentDuration').textContent = quiz.durationMinutes;
+  document.getElementById('camPermStatus').textContent = '';
+  go('student-consent');
+}
+
+async function requestCameraAndStart(){
+  const statusEl = document.getElementById('camPermStatus');
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({ video:{ width:320, height:240 } });
+    document.getElementById('camVideo').srcObject = camStream;
+    statusEl.textContent = 'Camera connected.';
+    beginExam(true);
+  }catch(e){
+    statusEl.textContent = 'Camera access was blocked. You can retry, or continue without it (this will be flagged on your report).';
+  }
+}
+
+function continueWithoutCamera(){
+  studentSub.violations.push({ type:'camera unavailable', time: Date.now(), snapshot: null });
+  beginExam(false);
+}
+
+function captureSnapshot(){
+  if(!camStream) return null;
+  try{
+    const video = document.getElementById('camVideo');
+    const canvas = document.getElementById('camCanvas');
+    canvas.width = 240; canvas.height = 180;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, 240, 180);
+    return canvas.toDataURL('image/jpeg', 0.5);
+  }catch(e){ return null; }
+}
+
+function beginExam(camOn){
+  document.getElementById('examTitleLabel').textContent = studentQuiz.title;
+  document.getElementById('camDot').classList.toggle('live', !!camOn);
+  document.getElementById('camLabel').textContent = camOn ? 'Camera active' : 'Camera off';
+  document.getElementById('camPreview').style.display = camOn ? 'block' : 'none';
+  if(camOn){
+    setInterval(()=>{ const d = captureSnapshot(); if(d) document.getElementById('camPreview').src = d; }, 3000);
+  }
+
+  renderExamQuestions();
+  go('student-exam');
+  startWatermark();
+  document.addEventListener('contextmenu', blockAction);
+  document.addEventListener('copy', blockAction);
+  document.addEventListener('cut', blockAction);
+
+  examDeadline = Date.now() + studentQuiz.durationMinutes*60000;
+  examTimerInterval = setInterval(updateTimer, 1000);
+  updateTimer();
+
+  if(camOn){
+    periodicSnapInterval = setInterval(()=>{
+      const snap = captureSnapshot();
+      studentSub.periodicSnapshots.push({ time: Date.now(), snapshot: snap });
+      persistProgress();
+    }, 15*60*1000);
+  }
+
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('blur', onWindowBlur);
+  window.addEventListener('pagehide', onPageHide);
+}
+
+function blockAction(e){ e.preventDefault(); }
+
+let watermarkInterval = null;
+function startWatermark(){
+  const el = document.getElementById('camPreview'); // no-op guard
+  const wm = document.getElementById('examWatermark');
+  if(!wm) return;
+  wm.style.display = 'block';
+  const draw = ()=>{
+    const line = escapeHtml(studentSub.studentName) + ' · ' + new Date().toLocaleString();
+    let rows = '';
+    for(let i=0;i<40;i++){ rows += line + '&emsp;&emsp;&emsp;'; rows += '<br>'; }
+    wm.innerHTML = rows;
+  };
+  draw();
+  watermarkInterval = setInterval(draw, 30000);
+}
+function stopWatermark(){
+  const wm = document.getElementById('examWatermark');
+  if(wm) wm.style.display = 'none';
+  if(watermarkInterval){ clearInterval(watermarkInterval); watermarkInterval = null; }
+}
+
+function persistProgress(){
+  if(studentQuiz && studentSub){
+    sSetWithRetry('sub:'+studentQuiz.id+':'+studentSub.subId, studentSub, true, 2).catch(()=>{});
+  }
+}
+
+let pageHideLogged = false;
+function onPageHide(){
+  if(pageHideLogged) return;
+  pageHideLogged = true;
+  studentSub.violations.push({ type:'left the page (back/close)', time: Date.now(), snapshot: captureSnapshot() });
+  persistProgress();
+}
+
+let lastViolationLogAt = 0;
+function onVisibilityChange(){
+  if(document.hidden){
+    logViolation('tab switched');
+  }
+}
+function onWindowBlur(){
+  logViolation('window unfocused');
+}
+function logViolation(type){
+  const now = Date.now();
+  if(now - lastViolationLogAt < 800) return; // blur + visibilitychange fire together on the same switch — only log it once
+  lastViolationLogAt = now;
+  const snap = captureSnapshot();
+  studentSub.violations.push({ type, time: now, snapshot: snap });
+  persistProgress();
+}
+
+function updateTimer(){
+  const remaining = examDeadline - Date.now();
+  const el = document.getElementById('examTimer');
+  if(remaining <= 0){
+    el.textContent = '00:00';
+    submitExam();
+    return;
+  }
+  const mins = Math.floor(remaining/60000);
+  const secs = Math.floor((remaining%60000)/1000);
+  el.textContent = String(mins).padStart(2,'0')+':'+String(secs).padStart(2,'0');
+}
+
+function renderExamQuestions(){
+  const wrap = document.getElementById('examQuestions');
+  const order = studentSub.questionOrder && studentSub.questionOrder.length ? studentSub.questionOrder : studentQuiz.questions.map((q,i)=>i);
+  wrap.innerHTML = order.map((qIdx,i)=>{
+    const q = studentQuiz.questions[qIdx];
+    let media = '';
+    if(q.mediaUrl){
+      if(/\.(mp4|webm|ogg)(\?.*)?$/i.test(q.mediaUrl)){
+        media = `<div class="media-wrap"><video src="${escapeAttr(q.mediaUrl)}" controls></video></div>`;
+      } else {
+        media = `<div class="media-wrap"><img src="${escapeAttr(q.mediaUrl)}" alt=""></div>`;
+      }
+    }
+    let inputHtml = '';
+    if(q.type==='mc'){
+      const optOrder = (studentSub.optionOrders && studentSub.optionOrders[q.qid]) || q.options.map((o,idx)=>idx);
+      inputHtml = optOrder.map(idx=>{
+        const opt = q.options[idx];
+        return `
+        <label class="radio-opt" style="align-items:flex-start;">
+          <input type="radio" name="q-${q.qid}" onchange="recordAnswer('${q.qid}', ${idx})" style="margin-top:.3rem;">
+          <span>
+            ${opt.imageUrl ? `<img src="${escapeAttr(opt.imageUrl)}" style="max-width:180px;display:block;border-radius:3px;margin-bottom:.3rem;">` : ''}
+            ${opt.text ? escapeHtml(opt.text) : ''}
+          </span>
+        </label>`;
+      }).join('');
+    } else if(q.type==='identification'){
+      inputHtml = `<input type="text" oninput="recordAnswer('${q.qid}', this.value)" placeholder="Type your answer...">`;
+    } else if(q.type==='solving'){
+      inputHtml = `
+        <textarea style="min-height:100px;" oninput="recordSolvingText('${q.qid}', this.value)" placeholder="Show your work (optional if you're attaching a file)..."></textarea>
+        <div class="field" style="margin-top:.6rem;">
+          <label>Attach your solution (image, PDF, doc — any file type)</label>
+          <input type="file" onchange="recordSolvingFile('${q.qid}', this)">
+          <div id="solvingPreview-${q.qid}"></div>
+        </div>`;
+    } else {
+      inputHtml = `<textarea style="min-height:120px;" oninput="recordAnswer('${q.qid}', this.value)" placeholder="Type your answer..."></textarea>`;
+    }
+    return `<div class="panel">
+      <div class="q-number">Question ${i+1} of ${studentQuiz.questions.length}</div>
+      <p style="font-size:1.05rem;"><strong>${escapeHtml(q.prompt)}</strong></p>
+      ${media}
+      ${inputHtml}
+    </div>`;
+  }).join('');
+}
+
+function recordAnswer(qid, value){
+  studentSub.answers[qid] = value;
+}
+
+function recordSolvingText(qid, value){
+  const existing = studentSub.answers[qid] && typeof studentSub.answers[qid]==='object' ? studentSub.answers[qid] : {};
+  existing.text = value;
+  studentSub.answers[qid] = existing;
+}
+
+function recordSolvingFile(qid, inputEl){
+  const file = inputEl.files[0];
+  if(!file) return;
+  const existing = studentSub.answers[qid] && typeof studentSub.answers[qid]==='object' ? studentSub.answers[qid] : {};
+  const isImage = file.type.startsWith('image/');
+
+  if(isImage){
+    const reader = new FileReader();
+    reader.onload = function(e){
+      const img = new Image();
+      img.onload = function(){
+        const canvas = document.createElement('canvas');
+        const maxW = 800;
+        const scale = Math.min(1, maxW/img.width);
+        canvas.width = img.width*scale;
+        canvas.height = img.height*scale;
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        existing.file = { name: file.name, type: 'image/jpeg', dataUrl: dataUrl };
+        studentSub.answers[qid] = existing;
+        document.getElementById('solvingPreview-'+qid).innerHTML = `<img src="${dataUrl}" style="max-width:200px;border-radius:3px;border:1px solid var(--rule);margin-top:.5rem;">`;
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  } else {
+    if(file.size > 4*1024*1024){
+      document.getElementById('solvingPreview-'+qid).innerHTML = `<p class="banner rust" style="margin-top:.5rem;">That file is too large (over 4MB) — try a smaller file.</p>`;
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(e){
+      existing.file = { name: file.name, type: file.type || 'application/octet-stream', dataUrl: e.target.result };
+      studentSub.answers[qid] = existing;
+      document.getElementById('solvingPreview-'+qid).innerHTML = `<p class="muted" style="margin-top:.5rem;">Attached: ${escapeHtml(file.name)}</p>`;
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+async function sSetWithRetry(key, value, shared, attempts){
+  attempts = attempts || 3;
+  for(let i=0;i<attempts;i++){
+    const result = await sSet(key, value, shared);
+    if(result) return result;
+    if(i < attempts-1) await sleep(800*(i+1));
+  }
+  return null;
+}
+
+async function submitExam(){
+  clearInterval(examTimerInterval);
+  clearInterval(periodicSnapInterval);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+  window.removeEventListener('blur', onWindowBlur);
+  window.removeEventListener('pagehide', onPageHide);
+  document.removeEventListener('contextmenu', blockAction);
+  document.removeEventListener('copy', blockAction);
+  document.removeEventListener('cut', blockAction);
+  stopWatermark();
+  if(camStream){ camStream.getTracks().forEach(t=>t.stop()); }
+
+  let score = 0;
+  studentQuiz.questions.forEach(q=>{
+    if(q.type==='mc' && studentSub.answers[q.qid]===q.correctIndex) score += 1;
+    if(q.type==='identification'){
+      const given = (studentSub.answers[q.qid]||'').toString().trim().toLowerCase();
+      const match = (q.acceptedAnswers||[]).some(a=>a.trim().toLowerCase()===given && given!=='');
+      if(match) score += 1;
+    }
+  });
+  studentSub.score = score;
+  studentSub.submittedAt = Date.now();
+  studentSub.essayGraded = !studentQuiz.questions.some(q=>q.type==='essay'||q.type==='solving');
+
+  const submitBtn = document.querySelector('#screen-student-exam .btn-row button');
+  if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'Saving...'; }
+
+  const saved = await sSetWithRetry('sub:'+studentQuiz.id+':'+studentSub.subId, studentSub, true, 3);
+
+  if(!saved){
+    if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = 'Submit exam'; }
+    // Restore monitoring so the exam stays valid while they retry.
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('blur', onWindowBlur);
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('contextmenu', blockAction);
+    document.addEventListener('copy', blockAction);
+    document.addEventListener('cut', blockAction);
+    alert('Your answers could not be saved due to a server error. Please check your connection and click "Submit exam" again — your answers are still here.');
+    return;
+  }
+
+  const maxScore = studentQuiz.questions.filter(q=>q.type==='mc'||q.type==='identification').length;
+  const hasManual = studentQuiz.questions.some(q=>q.type==='essay'||q.type==='solving');
+  document.getElementById('doneSummary').textContent = hasManual
+    ? `Auto-graded score: ${score}/${maxScore}. Essay/problem-solving answers will be graded by your teacher.`
+    : `Your score: ${score}/${maxScore}.`;
+  go('student-done');
+}
+
+/* ---------------- utils ---------------- */
+function escapeHtml(str){
+  return (str||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function escapeAttr(str){ return escapeHtml(str); }
+</script>
+</body>
+</html>
