@@ -871,7 +871,7 @@ function optLabel(opt){
     <h3>Tab-switch / window flags</h3>
     ${violHtml}
     <div class="rule"></div>
-    <h3>Periodic camera snapshots (every 15 min)</h3>
+    <h3>Periodic camera snapshots (every 1 min)</h3>
     ${periodicHtml}
   `;
 }
@@ -1009,7 +1009,7 @@ function beginExam(camOn){
       const snap = captureSnapshot();
       studentSub.periodicSnapshots.push({ time: Date.now(), snapshot: snap });
       persistProgress();
-    }, 15*60*1000);
+    }, 1*60*1000);
   }
 
   document.addEventListener('visibilitychange', onVisibilityChange);
