@@ -328,7 +328,7 @@ ESSAY: Explain the water cycle.</div>
     <div class="panel">
       <h2 id="consentTitle">Before you begin</h2>
       <div class="banner amber">
-        This exam is monitored. Switching tabs or minimizing this window is logged with a timestamp. Your camera will take periodic snapshots (not continuous video) to check for phone use, and one snapshot is taken any time you switch away. A visible camera indicator stays on the whole time. This exam also runs in fullscreen mode, and leaving fullscreen (including to set up a split screen with another window) is logged the same way, along with when you return to it.
+        This exam is monitored. Switching tabs or minimizing this window is logged with a timestamp. Your camera will take periodic snapshots (not continuous video) to check for phone use, and one snapshot is taken any time you switch away. A visible camera indicator stays on the whole time. This exam also runs in fullscreen mode, and leaving fullscreen (including to set up a split screen with another window) is logged the same way, along with when you return to it. Your browser also runs on-device face detection, entirely on your own computer, nothing is uploaded, to flag if no face is visible, more than one face is visible, your face stays turned away for a while, or your mouth moves in a way that looks like talking.
       </div>
       <p class="muted">Camera access and fullscreen mode are both required to take this exam, there's no way to continue without them. Time limit: <strong id="consentDuration"></strong> minutes.</p>
       <p class="muted" id="consentClosesNote" style="display:none;font-size:.85rem;"></p>
@@ -380,6 +380,20 @@ ESSAY: Explain the water cycle.</div>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
+<!-- MediaPipe Face Landmarker — runs entirely in the browser (nothing is
+     sent to any server beyond this one-time library/model download from
+     Google's own CDN). Loaded as an ES module and handed off to the main
+     script via window.FaceLandmarker/FilesetResolver, since a classic
+     script can't use "import" directly. If this fails to load (slow
+     connection, old browser), the main script detects that and simply
+     skips face-based monitoring — it never blocks a student from taking
+     the exam. -->
+<script type="module">
+  import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+  window.FaceLandmarker = FaceLandmarker;
+  window.FilesetResolver = FilesetResolver;
+</script>
 
 <script>
 /* ====================================================================
@@ -1557,6 +1571,10 @@ function beginExam(camOn){
       studentSub.periodicSnapshots.push({ time: Date.now(), snapshot: snap });
       persistProgress();
     }, 1*60*1000);
+    // Fire-and-forget: the exam is already running by this point and does
+    // not wait on this. If the library/model can't load, initFaceMonitoring
+    // just logs a console warning and this layer silently stays off.
+    initFaceMonitoring();
   }
 
   document.addEventListener('visibilitychange', onVisibilityChange);
@@ -1597,6 +1615,184 @@ function onFullscreenChange(){
 }
 function reenterFullscreen(){
   requestFullscreenOnExamRoot().catch(()=>{});
+}
+
+/* ==================================================
+   AI-assisted face monitoring (best-effort, non-blocking)
+   ================================================== */
+// Everything here runs on-device using Google's MediaPipe FaceLandmarker —
+// no video or audio is ever sent anywhere. It looks at a frame from the
+// live camera every couple of seconds and flags: nobody visible, more than
+// one face visible, the face turned/tilted away for a sustained stretch,
+// or the jaw repeatedly opening and closing (the closest a still-image-
+// based check can get to "looks like they're talking" — it cannot tell
+// WHO they might be talking to, or whether it's talking at all versus
+// yawning, so it's reported as "Possible talking", not a confirmed flag).
+// If the library/model fails to load, this whole layer is skipped — the
+// exam still runs fine on tab-switch/fullscreen/camera-snapshot monitoring
+// alone, since this is an enhancement, not a requirement, to take the exam.
+let faceLandmarker = null;
+let faceMonitorInterval = null;
+let faceMonitorState = null;
+
+const FACE_CHECK_INTERVAL_MS = 2000;
+const FACE_SUSTAIN_TICKS = 3;       // ~6s of consistent "away/no-face" before flagging
+const FACE_MULTI_SUSTAIN_TICKS = 2; // ~4s — a second face is a stronger signal, react sooner
+const LOOK_AWAY_H_THRESHOLD = 0.16; // sideways nose offset ratio
+const LOOK_AWAY_V_THRESHOLD = 0.18; // up/down nose offset ratio
+const JAW_OPEN_TALK_RANGE = 0.15;   // swing in the jawOpen blendshape across the rolling window
+const JAW_ROLLING_WINDOW = 4;
+
+async function waitForFaceLandmarkerLibrary(timeoutMs){
+  const start = Date.now();
+  while(!(window.FaceLandmarker && window.FilesetResolver)){
+    if(Date.now() - start > timeoutMs) throw new Error('MediaPipe library did not load in time');
+    await sleep(150);
+  }
+  return { FaceLandmarker: window.FaceLandmarker, FilesetResolver: window.FilesetResolver };
+}
+
+async function initFaceMonitoring(){
+  try{
+    const { FaceLandmarker, FilesetResolver } = await waitForFaceLandmarkerLibrary(8000);
+    const filesetResolver = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+    );
+    faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+        delegate: 'GPU'
+      },
+      outputFaceBlendshapes: true,
+      outputFacialTransformationMatrixes: false,
+      runningMode: 'VIDEO',
+      numFaces: 2
+    });
+    startFaceMonitorLoop();
+  }catch(e){
+    console.warn('Face monitoring unavailable, continuing without it:', e);
+    faceLandmarker = null;
+  }
+}
+
+function resetFaceMonitorState(){
+  faceMonitorState = {
+    noFaceStreak: 0, multiFaceStreak: 0, lookAwayStreak: 0,
+    noFaceFlagged: false, multiFaceFlagged: false, lookAwayFlagged: false, talkFlagged: false,
+    jawOpenHistory: []
+  };
+}
+
+function startFaceMonitorLoop(){
+  resetFaceMonitorState();
+  faceMonitorInterval = setInterval(runFaceMonitorTick, FACE_CHECK_INTERVAL_MS);
+}
+
+function stopFaceMonitorLoop(){
+  if(faceMonitorInterval){ clearInterval(faceMonitorInterval); faceMonitorInterval = null; }
+  if(faceLandmarker){ try{ faceLandmarker.close(); }catch(e){} faceLandmarker = null; }
+  faceMonitorState = null;
+}
+
+// Well-documented, stable MediaPipe Face Mesh landmark indices: nose
+// tip=1, left/right eye outer corners=33/263, forehead=10, chin=152.
+// Compares the nose tip's position against the midpoint of those
+// reference points to estimate how far off-center the head is turned.
+// The overall "away or not" signal is the reliable part of this; the
+// specific up/down/side label is a best-effort estimate.
+function estimateLookingAway(landmarks){
+  if(!landmarks || landmarks.length < 468) return null;
+  const nose = landmarks[1], leftEye = landmarks[33], rightEye = landmarks[263],
+        forehead = landmarks[10], chin = landmarks[152];
+  if(!nose || !leftEye || !rightEye || !forehead || !chin) return null;
+  const faceWidth = Math.abs(rightEye.x - leftEye.x) || 0.0001;
+  const faceHeight = Math.abs(chin.y - forehead.y) || 0.0001;
+  const hOffset = (nose.x - (leftEye.x + rightEye.x) / 2) / faceWidth;
+  const vOffset = (nose.y - (forehead.y + chin.y) / 2) / faceHeight;
+  const hAway = Math.abs(hOffset) >= LOOK_AWAY_H_THRESHOLD;
+  const vAway = Math.abs(vOffset) >= LOOK_AWAY_V_THRESHOLD;
+  let direction = null;
+  if(vAway) direction = vOffset > 0 ? 'down' : 'up';
+  else if(hAway) direction = 'side';
+  return { away: hAway || vAway, hOffset, vOffset, direction };
+}
+
+// Pure decision logic, deliberately separated from any DOM/camera access so
+// it can be tested with canned MediaPipe-shaped results. Mutates `state`
+// in place (the running streak/cooldown counters) and returns the list of
+// violation labels to log this tick, if any.
+function evaluateFaceTick(result, state){
+  const events = [];
+  const faces = (result && result.faceLandmarks) || [];
+  const n = faces.length;
+
+  if(n === 0){ state.noFaceStreak++; state.multiFaceStreak = 0; }
+  else if(n >= 2){ state.multiFaceStreak++; state.noFaceStreak = 0; }
+  else { state.noFaceStreak = 0; state.multiFaceStreak = 0; }
+
+  if(state.noFaceStreak >= FACE_SUSTAIN_TICKS && !state.noFaceFlagged){
+    state.noFaceFlagged = true;
+    events.push('No face detected');
+  } else if(state.noFaceStreak === 0){
+    state.noFaceFlagged = false;
+  }
+
+  if(state.multiFaceStreak >= FACE_MULTI_SUSTAIN_TICKS && !state.multiFaceFlagged){
+    state.multiFaceFlagged = true;
+    events.push('Multiple faces detected');
+  } else if(state.multiFaceStreak === 0){
+    state.multiFaceFlagged = false;
+  }
+
+  if(n === 1){
+    const pose = estimateLookingAway(faces[0]);
+    if(pose && pose.away) state.lookAwayStreak++;
+    else state.lookAwayStreak = 0;
+
+    if(state.lookAwayStreak >= FACE_SUSTAIN_TICKS && !state.lookAwayFlagged){
+      state.lookAwayFlagged = true;
+      const dir = pose && pose.direction ? (' (' + pose.direction + ')') : '';
+      events.push('Looking away' + dir);
+    } else if(state.lookAwayStreak === 0){
+      state.lookAwayFlagged = false;
+    }
+
+    const categories = (result.faceBlendshapes && result.faceBlendshapes[0] && result.faceBlendshapes[0].categories) || [];
+    const jawOpenCat = categories.find(c=>c.categoryName==='jawOpen');
+    state.jawOpenHistory.push(jawOpenCat ? jawOpenCat.score : 0);
+    if(state.jawOpenHistory.length > JAW_ROLLING_WINDOW) state.jawOpenHistory.shift();
+    if(state.jawOpenHistory.length === JAW_ROLLING_WINDOW){
+      const range = Math.max(...state.jawOpenHistory) - Math.min(...state.jawOpenHistory);
+      if(range >= JAW_OPEN_TALK_RANGE){
+        if(!state.talkFlagged){ state.talkFlagged = true; events.push('Possible talking'); }
+      } else {
+        state.talkFlagged = false;
+      }
+    }
+  } else {
+    state.lookAwayStreak = 0;
+    state.jawOpenHistory = [];
+  }
+
+  return events;
+}
+
+function runFaceMonitorTick(){
+  if(!faceLandmarker || !camStream || !studentSub) return;
+  const video = document.getElementById('camVideo');
+  if(!video || video.readyState < 2) return;
+  let result;
+  try{
+    result = faceLandmarker.detectForVideo(video, Math.floor(performance.now()));
+  }catch(e){ return; }
+  if(!faceMonitorState) resetFaceMonitorState();
+  const events = evaluateFaceTick(result, faceMonitorState);
+  if(events.length){
+    events.forEach(type=>{
+      studentSub.violations.push({ type, time: Date.now(), snapshot: captureSnapshot() });
+    });
+    persistProgress();
+  }
 }
 
 function blockAction(e){ e.preventDefault(); }
@@ -1811,6 +2007,7 @@ async function sSetWithRetry(key, value, shared, attempts){
 async function submitExam(){
   clearInterval(examTimerInterval);
   clearInterval(periodicSnapInterval);
+  stopFaceMonitorLoop();
   document.removeEventListener('visibilitychange', onVisibilityChange);
   window.removeEventListener('blur', onWindowBlur);
   window.removeEventListener('pagehide', onPageHide);
