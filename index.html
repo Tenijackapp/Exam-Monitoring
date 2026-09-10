@@ -328,9 +328,9 @@ ESSAY: Explain the water cycle.</div>
     <div class="panel">
       <h2 id="consentTitle">Before you begin</h2>
       <div class="banner amber">
-        This exam is monitored. Switching tabs or minimizing this window is logged with a timestamp. Your camera will take periodic snapshots (not continuous video) to check for phone use, and one snapshot is taken any time you switch away. A visible camera indicator stays on the whole time.
+        This exam is monitored. Switching tabs or minimizing this window is logged with a timestamp. Your camera will take periodic snapshots (not continuous video) to check for phone use, and one snapshot is taken any time you switch away. A visible camera indicator stays on the whole time. This exam also runs in fullscreen mode, and leaving fullscreen (including to set up a split screen with another window) is logged the same way, along with when you return to it.
       </div>
-      <p class="muted">Camera access is required to take this exam — there's no way to continue without it. Time limit: <strong id="consentDuration"></strong> minutes.</p>
+      <p class="muted">Camera access and fullscreen mode are both required to take this exam, there's no way to continue without them. Time limit: <strong id="consentDuration"></strong> minutes.</p>
       <p class="muted" id="consentClosesNote" style="display:none;font-size:.85rem;"></p>
       <div id="camPermStatus" class="muted" style="margin-bottom:1rem;"></div>
       <div class="btn-row">
@@ -341,6 +341,10 @@ ESSAY: Explain the water cycle.</div>
 
   <!-- STUDENT EXAM -->
   <div id="screen-student-exam" class="screen" style="user-select:none;-webkit-user-select:none;">
+    <div id="fullscreenBanner" class="banner rust" style="display:none;position:fixed;top:0;left:0;right:0;z-index:30;margin:0;border-radius:0;align-items:center;justify-content:center;gap:.75rem;">
+      <span>You've left fullscreen. This exam requires it, please return.</span>
+      <button onclick="reenterFullscreen()" style="background:#fff;color:var(--rust);border-color:var(--rust);">Return to fullscreen</button>
+    </div>
     <div id="examWatermark" style="display:none;position:fixed;inset:-20% -50%;pointer-events:none;z-index:2;transform:rotate(-25deg);opacity:.06;font-size:12px;line-height:2.6;color:#000;overflow:hidden;"></div>
     <div class="exam-header">
       <div>
@@ -1119,7 +1123,7 @@ async function loadReport(){
     if(violList.length){
       const counts = {};
       violList.forEach(v=>{ counts[v.type] = (counts[v.type]||0)+1; });
-      monitoringHtml = Object.keys(counts).map(t=>`<span class="pill rust" style="margin:1px 2px 1px 0;display:inline-block;">${escapeHtml(t)} &times;${counts[t]}</span>`).join('');
+      monitoringHtml = Object.keys(counts).map(t=>`<span class="pill ${violationPillClass(t)}" style="margin:1px 2px 1px 0;display:inline-block;">${escapeHtml(t)} &times;${counts[t]}</span>`).join('');
     }
     rows += `<tr class="clickable" onclick="openDetail('${s.subId}')">
       <td><strong>${escapeHtml(s.studentName)}</strong>${s.studentNumber?`<div class="muted" style="font-size:.78rem;">${escapeHtml(s.studentNumber)}</div>`:''}</td>
@@ -1143,7 +1147,7 @@ async function openDetail(subId){
       <div class="violation-item">
         ${v.snapshot ? `<img src="${v.snapshot}">` : '<div class="muted" style="width:96px;">no image</div>'}
         <div>
-          <span class="pill rust">${v.type}</span>
+          <span class="pill ${violationPillClass(v.type)}">${v.type}</span>
           <div class="muted" style="font-size:.82rem;margin-top:.2rem;">${new Date(v.time).toLocaleTimeString()}</div>
         </div>
       </div>`).join('');
@@ -1328,6 +1332,9 @@ let camStream = null;
 let examTimerInterval = null;
 let periodicSnapInterval = null;
 let examDeadline = null;
+let fullscreenEnforced = false;   // this attempt successfully entered fullscreen
+let fullscreenMonitoring = false; // listener is currently active
+let outOfFullscreen = false;      // currently outside fullscreen (after having entered it)
 
 function shuffleArray(arr){
   const a = arr.slice();
@@ -1451,6 +1458,30 @@ async function findQuiz(){
   go('student-consent');
 }
 
+// Fullscreen enforcement — best-effort. Browsers that don't support the
+// Fullscreen API at all (a handful of older/embedded mobile browsers) skip
+// enforcement rather than lock those students out entirely; every modern
+// desktop and mobile browser Chrome/Firefox/Edge/Safari does support it.
+function fullscreenSupported(){
+  const el = document.documentElement;
+  return !!(el.requestFullscreen || el.webkitRequestFullscreen);
+}
+function isFullscreenActive(){
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+function requestFullscreenOnExamRoot(){
+  const el = document.documentElement;
+  if(el.requestFullscreen) return el.requestFullscreen();
+  if(el.webkitRequestFullscreen) return Promise.resolve(el.webkitRequestFullscreen());
+  return Promise.reject(new Error('Fullscreen not supported'));
+}
+function exitFullscreenIfActive(){
+  try{
+    if(document.exitFullscreen) return document.exitFullscreen().catch(()=>{});
+    if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+  }catch(e){}
+}
+
 async function requestCameraAndStart(){
   const statusEl = document.getElementById('camPermStatus');
   if(studentQuiz.closesAt && Date.now() >= studentQuiz.closesAt){
@@ -1461,10 +1492,25 @@ async function requestCameraAndStart(){
     camStream = await navigator.mediaDevices.getUserMedia({ video:{ width:320, height:240 } });
     document.getElementById('camVideo').srcObject = camStream;
     statusEl.textContent = 'Camera connected.';
-    beginExam(true);
   }catch(e){
-    statusEl.textContent = 'Camera access was blocked or is unavailable. This exam requires it — check your browser\'s site settings to allow camera access for this page, then click "Allow camera & begin" again.';
+    statusEl.textContent = 'Camera access was blocked or is unavailable. This exam requires it, check your browser\'s site settings to allow camera access for this page, then click "Allow camera & begin" again.';
+    return;
   }
+
+  fullscreenEnforced = false;
+  if(fullscreenSupported()){
+    statusEl.textContent = 'Camera connected. Entering fullscreen…';
+    try{
+      await requestFullscreenOnExamRoot();
+      fullscreenEnforced = true;
+    }catch(e){
+      statusEl.textContent = 'This exam requires fullscreen mode, and the browser blocked that request. Click "Allow camera & begin" again and allow fullscreen when asked.';
+      if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream = null; }
+      return;
+    }
+  }
+
+  beginExam(true);
 }
 
 function captureSnapshot(){
@@ -1516,6 +1562,41 @@ function beginExam(camOn){
   document.addEventListener('visibilitychange', onVisibilityChange);
   window.addEventListener('blur', onWindowBlur);
   window.addEventListener('pagehide', onPageHide);
+
+  if(fullscreenEnforced){
+    fullscreenMonitoring = true;
+    outOfFullscreen = false;
+    document.getElementById('fullscreenBanner').style.display = 'none';
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+  }
+}
+
+// Fullscreen is exited/re-entered as one clean, reliable browser event (no
+// coalescing needed like tab-switch/blur) — logged as its own violation type
+// each way, with a camera snapshot, so the report shows both when they left
+// and when (if) they came back.
+function onFullscreenChange(){
+  if(!fullscreenMonitoring) return;
+  const banner = document.getElementById('fullscreenBanner');
+  if(!isFullscreenActive()){
+    if(!outOfFullscreen){
+      outOfFullscreen = true;
+      studentSub.violations.push({ type:'Exited fullscreen', time: Date.now(), snapshot: captureSnapshot() });
+      persistProgress();
+      if(banner) banner.style.display = 'flex';
+    }
+  } else {
+    if(outOfFullscreen){
+      outOfFullscreen = false;
+      studentSub.violations.push({ type:'Returned to fullscreen', time: Date.now(), snapshot: captureSnapshot() });
+      persistProgress();
+      if(banner) banner.style.display = 'none';
+    }
+  }
+}
+function reenterFullscreen(){
+  requestFullscreenOnExamRoot().catch(()=>{});
 }
 
 function blockAction(e){ e.preventDefault(); }
@@ -1736,6 +1817,13 @@ async function submitExam(){
   document.removeEventListener('contextmenu', blockAction);
   document.removeEventListener('copy', blockAction);
   document.removeEventListener('cut', blockAction);
+  if(fullscreenMonitoring){
+    document.removeEventListener('fullscreenchange', onFullscreenChange);
+    document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+    fullscreenMonitoring = false;
+  }
+  const fullscreenBanner = document.getElementById('fullscreenBanner');
+  if(fullscreenBanner) fullscreenBanner.style.display = 'none';
   stopWatermark();
   if(camStream){ camStream.getTracks().forEach(t=>t.stop()); }
 
@@ -1758,9 +1846,17 @@ async function submitExam(){
     document.addEventListener('contextmenu', blockAction);
     document.addEventListener('copy', blockAction);
     document.addEventListener('cut', blockAction);
+    if(fullscreenEnforced){
+      fullscreenMonitoring = true;
+      document.addEventListener('fullscreenchange', onFullscreenChange);
+      document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+    }
     alert('Your answers could not be saved due to a server error. Please check your connection and click "Submit exam" again — your answers are still here.');
     return;
   }
+
+  exitFullscreenIfActive();
+  fullscreenEnforced = false;
 
   const maxScore = studentQuiz.questions.reduce((sum,q)=>{
     if(q.type==='mc'||q.type==='tf'||q.type==='identification') return sum+1;
@@ -1775,6 +1871,11 @@ async function submitExam(){
 }
 
 /* ---------------- utils ---------------- */
+// "Returned to fullscreen" is good news, not a red flag — everything else
+// logged as a violation gets the usual warning color.
+function violationPillClass(type){
+  return type === 'Returned to fullscreen' ? 'sage' : 'rust';
+}
 function escapeHtml(str){
   return (str||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
